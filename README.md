@@ -1,11 +1,11 @@
-# Garak Studio
+# Innox Security
 
 A modern desktop GUI for [Garak](https://github.com/leondz/garak), NVIDIA's LLM vulnerability scanner. Garak Studio provides an intuitive interface to scan language models for security vulnerabilities including jailbreaks, prompt injection, toxicity, and more.
 
 ## Project Structure
 
 ```
-garak_studio/
+innxo_security/
 ├── backend/          # FastAPI backend service
 │   ├── api/          # API routes
 │   ├── models/       # Data models
@@ -208,32 +208,32 @@ flutter pub run build_runner build --delete-conflicting-outputs
 ### Home Screen
 The main dashboard provides quick access to all key features:
 
-![Home Screen](screenshorts/main1.png)
+![Home Screen](screenshots/main1.png)
 
 ### Model Configuration
 Select your target model from multiple LLM providers with built-in presets:
 
-![Model Selection](screenshorts/scan1.png)
+![Model Selection](screenshots/scan1.png)
 
 ### Probe Selection
 Browse and select from hundreds of vulnerability probes organized by category:
 
-![Probe Selection](screenshorts/probe1.png)
+![Probe Selection](screenshots/probe1.png)
 
 ### Scan Execution
 Real-time progress tracking with detailed status information:
 
-![Scan Execution](screenshorts/scan_exe1.png)
+![Scan Execution](screenshots/scan_exe1.png)
 
 ### Scan History
 View all past scans with pass/fail metrics at a glance:
 
-![Scan History](screenshorts/history.png)
+![Scan History](screenshots/history.png)
 
 ### Detailed Results
 Comprehensive results with visualizations and metrics:
 
-![Results Detail](screenshorts/report_detail.png)
+![Results Detail](screenshots/report_detail.png)
 
 
 ## Contributing
