@@ -4,7 +4,18 @@ Central configuration for all LLM security tests
 """
 
 import os
+from pathlib import Path
 from typing import Dict, Any
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"[Config] Loaded .env from {env_path}")
+except ImportError:
+    pass  # python-dotenv not installed, use system env vars
 
 # Backend API Configuration
 API_BASE_URL = os.getenv("INNOX_API_URL", "http://localhost:8888")

@@ -3,6 +3,9 @@
 # HTTP client for API communication
 requests>=2.31.0
 
+# Environment variable loading
+python-dotenv>=1.0.0
+
 # Optional: Better HTTP debugging
 # httpx>=0.25.0
 
