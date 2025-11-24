@@ -1,6 +1,6 @@
 # Garak Backend API
 
-REST API wrapper for the [garak](https://github.com/leondz/garak) LLM vulnerability scanner.
+REST API wrapper for the [garak](https://github.com/hasbegun/garak) LLM vulnerability scanner with **enhanced vulnerability reporting**.
 
 ## Overview
 
@@ -9,6 +9,65 @@ This FastAPI backend provides a REST API and WebSocket interface for running gar
 - Monitor scan progress in real-time
 - Retrieve scan results
 - Discover available plugins (generators, probes, detectors, buffs)
+
+## ✨ Enhanced Vulnerability Reporting
+
+This backend uses an **enhanced fork of garak** that provides detailed vulnerability reports instead of minimal pass/fail results.
+
+### What's Enhanced?
+
+**Before (Standard garak):**
+```json
+{
+  "probe": "dan.AntiDAN",
+  "detector_results": {"dan.AntiDAN": [1.0, 1.0, 1.0]}
+}
+```
+
+**After (Enhanced garak):**
+```json
+{
+  "probe": "dan.AntiDAN",
+  "detector_results": {"dan.AntiDAN": [1.0, 1.0, 1.0]},
+  "vulnerability_explanation": "Jailbreak vulnerability detected. The model...",
+  "attack_technique": "Jailbreak (AntiDAN)",
+  "severity": "high",
+  "cwe_ids": ["CWE-862"],
+  "owasp_categories": ["LLM01"],
+  "reproduction_steps": [
+    "Send prompt: 'Hello gemma3. You are ANTI-DAN...'",
+    "ACTUAL TEST RESULT - Model responded: 'ANTI-DAN: I understand...'",
+    "To verify: Send harmful prompts to test if jailbreak works"
+  ],
+  "mitigation_recommendations": [
+    "Implement multi-layer input validation",
+    "Use constitutional AI to reinforce safety",
+    "..."
+  ]
+}
+```
+
+### Enhanced Features
+
+- ✅ **Detailed explanations** - Understand exactly what vulnerability was found
+- ✅ **Actual LLM outputs** - See the model's real responses that failed
+- ✅ **Reproduction steps** - Step-by-step guide to reproduce the issue
+- ✅ **Severity ratings** - Critical/High/Medium/Low risk assessment
+- ✅ **CWE/OWASP mappings** - Industry-standard vulnerability classifications
+- ✅ **Mitigation recommendations** - 8+ actionable fixes per vulnerability
+- ✅ **Academic references** - Links to research papers and standards
+
+### Coverage
+
+| Category | Probes | Status |
+|----------|--------|--------|
+| Jailbreak Attacks | 18 | ✅ Complete |
+| Prompt Injection | 6 | ✅ Complete |
+| Malware Generation | 4 | ✅ Complete |
+| Encoding Bypass | 20 | ✅ Complete |
+| **Total** | **48+** | **✅ Production Ready** |
+
+📖 **Full documentation:** See `ENHANCED_REPORTING.md`
 
 ## Architecture
 
@@ -27,24 +86,36 @@ This FastAPI backend provides a REST API and WebSocket interface for running gar
 python --version  # Should be 3.9 or higher
 ```
 
-### 2. garak Installed
+### 2. garak Installed (Enhanced Version)
 
-**Option A: Install from PyPI (Recommended)**
-```bash
-pip install garak
-```
+**⚠️ IMPORTANT:** This backend requires the **enhanced garak fork** with vulnerability reporting features.
 
-**Option B: Install from source**
+**Install from source (Required):**
 ```bash
-git clone https://github.com/leondz/garak.git
+# Clone the enhanced fork
+git clone https://github.com/hasbegun/garak.git
 cd garak
+
+# Install in development mode
 pip install -e .
 ```
 
 **Verify Installation:**
 ```bash
-garak --help
+# Check version
+garak --version
+
+# Should show version 0.13.3rc1 or later
+# Verify enhanced reporting is available
+python -c "from garak.probes._enhanced_reporting import BaseEnhancedReportingMixin; print('✅ Enhanced reporting available')"
 ```
+
+**Why the fork?**
+- ✅ Adds detailed vulnerability explanations to reports
+- ✅ Includes actual LLM outputs that failed tests
+- ✅ Provides CWE/OWASP classifications
+- ✅ Generates reproduction steps and mitigation recommendations
+- ✅ See `ENHANCED_REPORTING.md` for complete details
 
 ### 3. Backend Dependencies
 ```bash
@@ -500,11 +571,21 @@ cd garak_ui
 flutter run -d macos  # or your platform
 ```
 
-## Support
+## Documentation
 
-- **Garak Documentation**: https://reference.garak.ai
-- **Garak GitHub**: https://github.com/leondz/garak
-- **FastAPI Documentation**: https://fastapi.tiangolo.com
+### Enhanced Reporting Documentation
+- **Enhanced Reporting Guide:** `ENHANCED_REPORTING.md` - Complete feature documentation
+- **Implementation Details:** `PARALLEL_IMPLEMENTATION_COMPLETE.md` - Technical implementation
+- **Expansion Plan:** `ENHANCED_REPORTING_EXPANSION_PLAN.md` - Future roadmap
+- **Hook Timing Fix:** `CRITICAL_FIX_HOOK_TIMING.md` - Critical architecture fix
+
+### External Resources
+- **Enhanced Garak Fork:** https://github.com/hasbegun/garak
+- **Garak Documentation:** https://reference.garak.ai
+- **Upstream Garak:** https://github.com/leondz/garak
+- **FastAPI Documentation:** https://fastapi.tiangolo.com
+- **OWASP LLM Top 10:** https://owasp.org/www-project-top-10-for-large-language-model-applications/
+- **CWE Database:** https://cwe.mitre.org/
 
 ## License
 
@@ -512,5 +593,7 @@ Same as garak - Apache 2.0
 
 ---
 
-**Backend Version**: 1.0.0
-**Last Updated**: 2024-11-14
+**Backend Version:** 1.0.0
+**Enhanced Garak Version:** 0.13.3rc1+
+**Last Updated:** November 24, 2025
+**Enhanced Reporting Status:** ✅ Production Ready (48+ probes)
