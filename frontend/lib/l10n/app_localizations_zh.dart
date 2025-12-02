@@ -9,7 +9,7 @@ class AppLocalizationsZh extends AppLocalizations {
   AppLocalizationsZh([String locale = 'zh']) : super(locale);
 
   @override
-  String get appName => 'Innox Security';
+  String get appName => 'Aegis';
 
   @override
   String get appDescription => 'LLM漏洞扫描器';

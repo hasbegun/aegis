@@ -9,7 +9,7 @@ class AppLocalizationsEs extends AppLocalizations {
   AppLocalizationsEs([String locale = 'es']) : super(locale);
 
   @override
-  String get appName => 'Innox Security';
+  String get appName => 'Aegis';
 
   @override
   String get appDescription => 'Escáner de Vulnerabilidades LLM';

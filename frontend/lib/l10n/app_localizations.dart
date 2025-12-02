@@ -107,7 +107,7 @@ abstract class AppLocalizations {
   /// No description provided for @appName.
   ///
   /// In en, this message translates to:
-  /// **'Innox Security'**
+  /// **'Aegis'**
   String get appName;
 
   /// No description provided for @appDescription.

@@ -418,7 +418,7 @@ class GarakWrapper:
         scan_info = self.active_scans[scan_id]
 
         # Check for error patterns first
-        if '❌Unknown probes❌' in line or 'Unknown probes' in line:
+        if 'Unknown probes' in line:
             # Extract the unknown probe names
             match = re.search(r'Unknown probes.*?:\s*(.+)', line)
             if match:

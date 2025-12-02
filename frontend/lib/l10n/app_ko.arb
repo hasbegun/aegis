@@ -1,7 +1,7 @@
 {
   "@@locale": "ko",
 
-  "appName": "Innox Security",
+  "appName": "Aegis",
   "appDescription": "LLM 취약점 스캐너",
   "appVersion": "1.0.0",
 
