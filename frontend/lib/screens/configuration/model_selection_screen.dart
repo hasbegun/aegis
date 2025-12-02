@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:aegis/l10n/app_localizations.dart';
 import '../../config/constants.dart';
 import '../../providers/scan_config_provider.dart';
+import '../../providers/models_provider.dart';
+import '../../models/generator_model.dart';
 import '../../utils/ui_helpers.dart';
 import '../configuration/probe_selection_screen.dart';
 
@@ -25,6 +27,7 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
   String _ollamaEndpoint = AppConstants.defaultOllamaEndpoint;
   final TextEditingController _modelNameController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
+  String? _selectedModelId; // Track the actual model ID for backend
 
   @override
   void initState() {
@@ -69,10 +72,11 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
       return;
     }
 
-    // Update scan config
+    // Update scan config - use model ID if available, otherwise use text field value
+    final modelIdentifier = _selectedModelId ?? _modelNameController.text;
     ref.read(scanConfigProvider.notifier).setTarget(
           _selectedGeneratorType!,
-          _modelNameController.text,
+          modelIdentifier,
         );
 
     // Apply preset if selected
@@ -221,9 +225,10 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                             onSelected: (selected) {
                               setState(() {
                                 _selectedGeneratorType = selected ? type : null;
-                                // Set example model names
+                                // Clear model selection when changing generator type
                                 if (selected) {
-                                  _modelNameController.text = _getExampleModelName(type);
+                                  _modelNameController.clear();
+                                  _selectedModelId = null;
                                 }
                               });
                             },
@@ -237,7 +242,7 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
               ),
               const SizedBox(height: AppConstants.defaultPadding),
 
-              // Model Name Input
+              // Model Name Input with Autocomplete
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(AppConstants.defaultPadding),
@@ -258,14 +263,17 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                         ),
                       ),
                       const SizedBox(height: AppConstants.defaultPadding),
-                      TextField(
-                        controller: _modelNameController,
-                        decoration: InputDecoration(
-                          hintText: _getModelHint(context, _selectedGeneratorType),
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.model_training),
-                        ),
-                      ),
+                      _selectedGeneratorType != null
+                          ? _buildModelAutocomplete(theme)
+                          : TextField(
+                              controller: _modelNameController,
+                              enabled: false,
+                              decoration: InputDecoration(
+                                hintText: 'Select a generator type first',
+                                border: const OutlineInputBorder(),
+                                prefixIcon: const Icon(Icons.model_training),
+                              ),
+                            ),
                     ],
                   ),
                 ),
@@ -463,6 +471,253 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: Text(l10n.gotIt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build autocomplete widget for model selection
+  Widget _buildModelAutocomplete(ThemeData theme) {
+    final modelsAsync = ref.watch(generatorModelsProvider(_selectedGeneratorType!));
+
+    return modelsAsync.when(
+      data: (modelsResponse) {
+        final models = modelsResponse.models;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Autocomplete<GeneratorModel>(
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return models;
+                }
+                return models.where((model) {
+                  final searchLower = textEditingValue.text.toLowerCase();
+                  return model.id.toLowerCase().contains(searchLower) ||
+                      model.name.toLowerCase().contains(searchLower) ||
+                      model.description.toLowerCase().contains(searchLower);
+                });
+              },
+              displayStringForOption: (GeneratorModel option) => option.name,
+              fieldViewBuilder: (
+                BuildContext context,
+                TextEditingController controller,
+                FocusNode focusNode,
+                VoidCallback onFieldSubmitted,
+              ) {
+                // Sync with our controller
+                if (_modelNameController.text.isEmpty && controller.text.isEmpty) {
+                  // Set initial value to first recommended model if available
+                  final recommended = models.where((m) => m.recommended).toList();
+                  if (recommended.isNotEmpty && _modelNameController.text.isEmpty) {
+                    _modelNameController.text = recommended.first.name;
+                    controller.text = recommended.first.name;
+                    _selectedModelId = recommended.first.id;
+                  }
+                }
+
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: InputDecoration(
+                    hintText: 'Type to search or select a model',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.model_training),
+                    suffixIcon: controller.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              controller.clear();
+                              _modelNameController.clear();
+                              _selectedModelId = null;
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (value) {
+                    _modelNameController.text = value;
+                    // If user is typing manually, clear the selected model ID
+                    _selectedModelId = null;
+                  },
+                );
+              },
+              optionsViewBuilder: (
+                BuildContext context,
+                AutocompleteOnSelected<GeneratorModel> onSelected,
+                Iterable<GeneratorModel> options,
+              ) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4.0,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300, maxWidth: 400),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final model = options.elementAt(index);
+                          return ListTile(
+                            leading: Icon(
+                              model.recommended ? Icons.star : Icons.model_training,
+                              color: model.recommended
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.onSurfaceVariant,
+                              size: 20,
+                            ),
+                            title: Text(
+                              model.name,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: model.recommended ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  model.id,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontFamily: 'monospace',
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  model.description,
+                                  style: theme.textTheme.bodySmall,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                            trailing: model.contextLength != null
+                                ? Chip(
+                                    label: Text(
+                                      '${model.contextLength}K',
+                                      style: theme.textTheme.labelSmall,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                  )
+                                : null,
+                            isThreeLine: true,
+                            onTap: () {
+                              onSelected(model);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+              onSelected: (GeneratorModel selection) {
+                setState(() {
+                  _modelNameController.text = selection.name;
+                  _selectedModelId = selection.id;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            // Show API key requirement and notes
+            if (modelsResponse.requiresApiKey) ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.key,
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'API Key Required: ${modelsResponse.apiKeyEnvVar}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (modelsResponse.note != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                modelsResponse.note!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            // Show recommended models as chips
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: models
+                  .where((m) => m.recommended)
+                  .map((model) => ActionChip(
+                        avatar: const Icon(Icons.star, size: 16),
+                        label: Text(model.name),
+                        labelStyle: theme.textTheme.labelSmall,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          setState(() {
+                            _modelNameController.text = model.name;
+                            _selectedModelId = model.id;
+                          });
+                        },
+                      ))
+                  .toList(),
+            ),
+          ],
+        );
+      },
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: CircularProgressIndicator(),
+        ),
+      ),
+      error: (error, stack) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _modelNameController,
+            decoration: InputDecoration(
+              hintText: _getModelHint(context, _selectedGeneratorType),
+              border: const OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.model_training),
+              errorText: 'Failed to load models',
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.errorContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.warning,
+                  size: 16,
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Could not load model list. You can still enter a model name manually.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onErrorContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

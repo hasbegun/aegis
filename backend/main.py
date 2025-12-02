@@ -4,7 +4,7 @@ Main entry point for the API server
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import scan, plugins, config, system, custom_probes, workflow
+from api.routes import scan, plugins, config, system, custom_probes, workflow, models
 from config import settings
 import logging
 
@@ -42,6 +42,7 @@ app.include_router(config.router, prefix="/api/v1/config", tags=["Configuration"
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 app.include_router(custom_probes.router, prefix="/api/v1/probes/custom", tags=["Custom Probes"])
 app.include_router(workflow.router, tags=["Workflow"])
+app.include_router(models.router, prefix="/api/v1/generators", tags=["Models"])
 
 
 @app.get("/")
