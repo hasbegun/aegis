@@ -894,7 +894,7 @@ class _ScanExecutionScreenState extends ConsumerState<ScanExecutionScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: scan.progress ?? 0.0,
+                  value: (scan.progress ?? 0.0) / 100,  // Convert percentage (0-100) to fraction (0-1)
                   minHeight: 6,
                   backgroundColor: theme.colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation<Color>(
@@ -908,7 +908,7 @@ class _ScanExecutionScreenState extends ConsumerState<ScanExecutionScreen> {
                 children: [
                   Text(
                     scan.progress != null
-                        ? '${(scan.progress! * 100).toStringAsFixed(1)}% complete'
+                        ? '${scan.progress!.toStringAsFixed(1)}% complete'
                         : 'Starting...',
                     style: theme.textTheme.bodySmall,
                   ),

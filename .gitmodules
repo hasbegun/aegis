@@ -1,3 +1,0 @@
-[submodule "backend/garak"]
-	path = backend/garak
-	url = https://github.com/hasbegun/garak.git

@@ -29,9 +29,21 @@ class Settings(BaseSettings):
 
     # Garak Configuration
     garak_path: str | None = None
+    garak_reports_dir: str | None = None  # Default: ~/.local/share/garak/garak_runs
+
+    # Ollama Configuration
+    ollama_host: str = "http://localhost:11434"
+    ollama_model_cache_ttl: int = 300  # Cache TTL in seconds (5 minutes)
 
     # API Configuration
     max_concurrent_scans: int = 5
+
+    @property
+    def garak_reports_path(self) -> Path:
+        """Get the garak reports directory path"""
+        if self.garak_reports_dir:
+            return Path(self.garak_reports_dir)
+        return Path.home() / ".local" / "share" / "garak" / "garak_runs"
 
     model_config = SettingsConfigDict(
         env_file=".env",

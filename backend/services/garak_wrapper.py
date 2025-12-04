@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from models.schemas import ScanStatus, ScanConfigRequest
 from services.workflow_analyzer import workflow_analyzer
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,9 @@ class GarakWrapper:
     def __init__(self, garak_path: Optional[str] = None):
         self.active_scans: Dict[str, Dict[str, Any]] = {}
         self.garak_path = garak_path or self._find_garak()
+        self.garak_reports_dir = settings.garak_reports_path
         logger.info(f"Garak path: {self.garak_path}")
+        logger.info(f"Garak reports directory: {self.garak_reports_dir}")
 
     def _find_garak(self) -> Optional[str]:
         """Find garak executable in PATH or as module"""
@@ -262,9 +265,45 @@ class GarakWrapper:
             cmd.extend(['--parallel_attempts', str(config.parallel_attempts)])
 
         # Generator options (pass as JSON)
+        # Structure must match garak's expected format: {"<generator_type>": {"key": "value"}}
+        # e.g., {"ollama": {"host": "http://localhost:11434"}}
+
+        # Extract base generator type (e.g., "ollama" from "ollama.OllamaGeneratorChat")
+        generator_type = config.target_type.split('.')[0].lower()
+
+        # Start with user-provided options (which should already be in nested format)
+        # or create the nested structure
+        generator_options = {}
         if config.generator_options:
-            opts_json = json.dumps(config.generator_options)
+            # If user provided flat options, nest them under the generator type
+            user_opts = dict(config.generator_options)
+            # Check if already nested (has generator type as key)
+            if generator_type in user_opts:
+                generator_options = user_opts
+            else:
+                generator_options = {generator_type: user_opts}
+
+        # Auto-inject OLLAMA_HOST for Ollama generators if set in environment
+        import os
+        ollama_host = os.environ.get('OLLAMA_HOST')
+        logger.info(f"Target type: {config.target_type}, Generator type: {generator_type}, OLLAMA_HOST env: {ollama_host}")
+
+        # Check if this is an Ollama generator
+        is_ollama = 'ollama' in generator_type
+
+        if ollama_host and is_ollama:
+            # Ensure the ollama key exists in generator_options
+            if 'ollama' not in generator_options:
+                generator_options['ollama'] = {}
+            # Only set host if not already specified by user
+            if 'host' not in generator_options['ollama']:
+                generator_options['ollama']['host'] = ollama_host
+                logger.info(f"Injecting Ollama host for generator: {ollama_host}")
+
+        if generator_options:
+            opts_json = json.dumps(generator_options)
             cmd.extend(['--generator_options', opts_json])
+            logger.info(f"Generator options: {opts_json}")
 
         # Probe options
         if config.probe_options:
@@ -341,10 +380,19 @@ class GarakWrapper:
             # Use STDOUT for both streams since garak outputs progress to stderr
             # Create in new process group so we can kill all children when canceled
             import os
+
+            # Pass current environment to subprocess (includes OLLAMA_HOST, API keys, etc.)
+            env = os.environ.copy()
+
+            # Log key environment variables for debugging
+            ollama_host = env.get('OLLAMA_HOST', 'not set')
+            logger.info(f"[{scan_id}] Starting scan with OLLAMA_HOST={ollama_host}")
+
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
+                env=env,  # Pass environment variables to garak subprocess
                 preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None  # Create new process group (Unix/macOS)
             )
 
@@ -593,9 +641,8 @@ class GarakWrapper:
             return {k: v for k, v in scan_info.items() if k != 'process'}
 
         # If not found in active scans, check historical scans
-        garak_runs_dir = Path.home() / ".local" / "share" / "garak" / "garak_runs"
-        if garak_runs_dir.exists():
-            report_file = garak_runs_dir / f"garak.{scan_id}.report.jsonl"
+        if self.garak_reports_dir.exists():
+            report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
             if report_file.exists():
                 return self._parse_report_file(report_file, scan_id)
 
@@ -606,7 +653,7 @@ class GarakWrapper:
         scan_info = self.active_scans.get(scan_id)
 
         if not scan_info:
-            logger.warning(f"Cannot cancel scan {scan_id}: not found")
+            logger.warning(f"Cannot cancel scan {scan_id}: not found in active_scans")
             return False
 
         if scan_info['status'] not in [ScanStatus.RUNNING, ScanStatus.PENDING]:
@@ -619,42 +666,73 @@ class GarakWrapper:
                 import os
                 import signal
 
-                # Get the process group ID
                 pid = process.pid
-                logger.info(f"Canceling scan {scan_id} (PID: {pid})")
+                logger.info(f"[{scan_id}] Canceling scan (PID: {pid}, returncode: {process.returncode})")
 
-                # Kill the entire process group to ensure all child processes are terminated
+                # Check if process is still alive
+                if process.returncode is not None:
+                    logger.info(f"[{scan_id}] Process already exited with code {process.returncode}")
+                    scan_info['status'] = ScanStatus.CANCELLED
+                    scan_info['completed_at'] = datetime.now().isoformat()
+                    return True
+
+                # Try multiple methods to kill the process tree
+                killed = False
+
+                # Method 1: Kill process group (Unix/macOS/Linux)
                 if hasattr(os, 'killpg'):
                     try:
-                        # On Unix/macOS, kill the process group
-                        os.killpg(os.getpgid(pid), signal.SIGTERM)
-                        logger.info(f"Sent SIGTERM to process group {pid}")
-                        await asyncio.sleep(1)
+                        pgid = os.getpgid(pid)
+                        logger.info(f"[{scan_id}] Killing process group {pgid}")
+                        os.killpg(pgid, signal.SIGTERM)
+                        logger.info(f"[{scan_id}] Sent SIGTERM to process group {pgid}")
+                        killed = True
+                    except (ProcessLookupError, OSError) as e:
+                        logger.warning(f"[{scan_id}] killpg failed: {e}, trying direct kill")
 
-                        # Force kill if still running
-                        if process.returncode is None:
-                            os.killpg(os.getpgid(pid), signal.SIGKILL)
-                            logger.info(f"Sent SIGKILL to process group {pid}")
+                # Method 2: Direct process termination (fallback)
+                if not killed or process.returncode is None:
+                    try:
+                        process.terminate()
+                        logger.info(f"[{scan_id}] Sent terminate() to process {pid}")
                     except ProcessLookupError:
-                        # Process already terminated
-                        logger.info(f"Process {pid} already terminated")
-                        pass
-                else:
-                    # Fallback for Windows
-                    process.terminate()
-                    await asyncio.sleep(1)
-                    if process.returncode is None:
+                        logger.info(f"[{scan_id}] Process {pid} not found for terminate()")
+
+                # Wait for process to exit
+                await asyncio.sleep(1)
+
+                # Force kill if still running
+                if process.returncode is None:
+                    logger.info(f"[{scan_id}] Process still running after SIGTERM, sending SIGKILL")
+                    try:
+                        if hasattr(os, 'killpg'):
+                            try:
+                                pgid = os.getpgid(pid)
+                                os.killpg(pgid, signal.SIGKILL)
+                                logger.info(f"[{scan_id}] Sent SIGKILL to process group {pgid}")
+                            except (ProcessLookupError, OSError):
+                                pass
                         process.kill()
+                        logger.info(f"[{scan_id}] Sent kill() to process {pid}")
+                    except ProcessLookupError:
+                        logger.info(f"[{scan_id}] Process {pid} not found for kill()")
+
+                # Wait a bit more and check status
+                await asyncio.sleep(0.5)
+                logger.info(f"[{scan_id}] Final process returncode: {process.returncode}")
 
                 scan_info['status'] = ScanStatus.CANCELLED
                 scan_info['completed_at'] = datetime.now().isoformat()
-                logger.info(f"Scan {scan_id} cancelled successfully")
+                logger.info(f"[{scan_id}] Scan cancelled successfully")
                 return True
             except Exception as e:
-                logger.error(f"Error cancelling scan {scan_id}: {e}")
+                logger.error(f"[{scan_id}] Error cancelling scan: {e}", exc_info=True)
+                # Still mark as cancelled even if kill failed
+                scan_info['status'] = ScanStatus.CANCELLED
+                scan_info['completed_at'] = datetime.now().isoformat()
                 return False
 
-        logger.warning(f"Cannot cancel scan {scan_id}: no process found")
+        logger.warning(f"[{scan_id}] Cannot cancel scan: no process found in scan_info")
         return False
 
     def delete_scan(self, scan_id: str) -> bool:
@@ -680,8 +758,7 @@ class GarakWrapper:
             logger.info(f"Removed scan {scan_id} from active scans")
 
         # Delete report files if they exist
-        garak_runs_dir = Path.home() / ".local" / "share" / "garak" / "garak_runs"
-        if garak_runs_dir.exists():
+        if self.garak_reports_dir.exists():
             deleted_files = []
             try:
                 # Find and delete all files related to this scan
@@ -690,7 +767,7 @@ class GarakWrapper:
                     f"garak.{scan_id}.report.html",
                     f"garak.{scan_id}.*",  # Catch any other files
                 ]:
-                    for file_path in garak_runs_dir.glob(file_pattern):
+                    for file_path in self.garak_reports_dir.glob(file_pattern):
                         try:
                             file_path.unlink()
                             deleted_files.append(str(file_path))
@@ -715,7 +792,7 @@ class GarakWrapper:
     def get_all_scans(self) -> List[Dict[str, Any]]:
         """
         Get information about all scans (active and historical)
-        Reads from ~/.local/share/garak/garak_runs directory
+        Reads from configurable garak_reports directory
         """
         all_scans = []
 
@@ -725,16 +802,14 @@ class GarakWrapper:
             scan_copy = {k: v for k, v in scan_info.items() if k != 'process'}
             all_scans.append(scan_copy)
 
-        # Read historical scans from garak_runs directory
-        garak_runs_dir = Path.home() / ".local" / "share" / "garak" / "garak_runs"
-
-        if not garak_runs_dir.exists():
-            logger.warning(f"Garak runs directory not found: {garak_runs_dir}")
+        # Read historical scans from garak_reports directory
+        if not self.garak_reports_dir.exists():
+            logger.warning(f"Garak reports directory not found: {self.garak_reports_dir}")
             return sorted(all_scans, key=lambda x: x.get('started_at', ''), reverse=True)
 
         try:
             # Find all report.jsonl files
-            report_files = list(garak_runs_dir.glob("garak.*.report.jsonl"))
+            report_files = list(self.garak_reports_dir.glob("garak.*.report.jsonl"))
 
             for report_file in report_files:
                 try:

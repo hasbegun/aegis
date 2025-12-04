@@ -1,4 +1,7 @@
-.PHONY: help install run dev prod production test clean lint format check-env logs-follow
+.PHONY: help install run dev prod production test clean lint format check-env logs-follow \
+        docker-build docker-run docker-up docker-down docker-logs docker-shell docker-clean docker-rebuild \
+        compose-up compose-down compose-restart compose-logs compose-ps compose-pull compose-build \
+        compose-dev compose-dev-down compose-dev-logs
 
 # Default target
 .DEFAULT_GOAL := help
@@ -10,6 +13,12 @@ PIP := pip
 # Project directories
 SRC_DIR := .
 VENV_DIR := venv
+
+# Docker configuration
+DOCKER_IMAGE := aegis-backend
+DOCKER_CONTAINER := aegis-backend
+# Use 'docker compose' (V2) if available, fallback to 'docker-compose' (V1)
+DOCKER_COMPOSE := $(shell docker compose version > /dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
 
 # Colors for output
 BLUE := \033[0;34m
@@ -126,3 +135,174 @@ info: ## Show project information
 	@echo "  Backend port: 8888"
 	@echo "  Production workers: 4"
 	@echo "  Config file: .env"
+
+# =============================================================================
+# Docker Commands
+# =============================================================================
+
+docker-build: check-env ## Build the Docker image
+	@echo "$(BLUE)Building Docker image...$(NC)"
+	docker build -t $(DOCKER_IMAGE) .
+	@echo "$(GREEN)✓ Docker image built: $(DOCKER_IMAGE)$(NC)"
+
+docker-run: check-env docker-build ## Build and run container (standalone)
+	@echo "$(BLUE)Running Docker container...$(NC)"
+	@mkdir -p garak_reports
+	docker run -d \
+		--name $(DOCKER_CONTAINER) \
+		-p 8888:8888 \
+		-v "$$(pwd)/garak_reports:/data/garak_reports" \
+		--env-file .env \
+		$(DOCKER_IMAGE)
+	@echo "$(GREEN)✓ Container started: $(DOCKER_CONTAINER)$(NC)"
+	@echo "$(YELLOW)  API: http://localhost:8888$(NC)"
+	@echo "$(YELLOW)  Logs: make docker-logs$(NC)"
+	@echo "$(YELLOW)  Stop: make docker-stop$(NC)"
+
+docker-up: check-env ## Start services with docker-compose
+	@echo "$(BLUE)Starting services with docker-compose...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) up -d --build
+	@echo "$(GREEN)✓ Services started$(NC)"
+	@echo "$(YELLOW)  API: http://localhost:8888$(NC)"
+	@echo "$(YELLOW)  Logs: make docker-logs$(NC)"
+	@echo "$(YELLOW)  Stop: make docker-down$(NC)"
+
+docker-down: ## Stop and remove docker-compose services
+	@echo "$(BLUE)Stopping docker-compose services...$(NC)"
+	$(DOCKER_COMPOSE) down
+	@echo "$(GREEN)✓ Services stopped$(NC)"
+
+docker-stop: ## Stop the standalone Docker container
+	@echo "$(BLUE)Stopping Docker container...$(NC)"
+	@docker stop $(DOCKER_CONTAINER) 2>/dev/null && docker rm $(DOCKER_CONTAINER) 2>/dev/null \
+		&& echo "$(GREEN)✓ Container stopped and removed$(NC)" \
+		|| echo "$(YELLOW)Container was not running$(NC)"
+
+docker-logs: ## Show Docker container logs
+	@echo "$(BLUE)Docker container logs:$(NC)"
+	@$(DOCKER_COMPOSE) logs -f 2>/dev/null || docker logs -f $(DOCKER_CONTAINER) 2>/dev/null || echo "$(YELLOW)No running container found$(NC)"
+
+docker-shell: ## Open a shell in the running container
+	@echo "$(BLUE)Opening shell in container...$(NC)"
+	@docker exec -it $(DOCKER_CONTAINER) /bin/bash 2>/dev/null || $(DOCKER_COMPOSE) exec backend /bin/bash 2>/dev/null || echo "$(RED)No running container found$(NC)"
+
+docker-status: ## Show Docker container status
+	@echo "$(BLUE)Docker Status:$(NC)"
+	@docker ps --filter "name=$(DOCKER_CONTAINER)" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "$(YELLOW)No containers found$(NC)"
+	@echo ""
+	@echo "$(BLUE)Docker Compose Status:$(NC)"
+	@$(DOCKER_COMPOSE) ps 2>/dev/null || echo "$(YELLOW)No compose services found$(NC)"
+
+docker-clean: ## Remove Docker image and containers
+	@echo "$(BLUE)Cleaning Docker resources...$(NC)"
+	@docker stop $(DOCKER_CONTAINER) 2>/dev/null || true
+	@docker rm $(DOCKER_CONTAINER) 2>/dev/null || true
+	@docker rmi $(DOCKER_IMAGE) 2>/dev/null || true
+	@$(DOCKER_COMPOSE) down --rmi local 2>/dev/null || true
+	@echo "$(GREEN)✓ Docker resources cleaned$(NC)"
+
+docker-rebuild: docker-clean docker-up ## Clean and rebuild everything
+
+docker-health: ## Check Docker container health
+	@echo "$(BLUE)Checking container health...$(NC)"
+	@curl -s http://localhost:8888/health | python -m json.tool 2>/dev/null \
+		&& echo "$(GREEN)✓ Backend is healthy$(NC)" \
+		|| echo "$(RED)✗ Backend is not responding$(NC)"
+
+# =============================================================================
+# Docker Compose Commands (Aliases)
+# =============================================================================
+
+compose-build: check-env ## Build images with docker compose
+	@echo "$(BLUE)Building with docker compose...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) build
+	@echo "$(GREEN)✓ Build complete$(NC)"
+
+compose-up: check-env ## Start services (detached)
+	@echo "$(BLUE)Starting services...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) up -d
+	@echo "$(GREEN)✓ Services started$(NC)"
+	@echo "$(YELLOW)  API: http://localhost:8888$(NC)"
+
+compose-up-build: check-env ## Build and start services
+	@echo "$(BLUE)Building and starting services...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) up -d --build
+	@echo "$(GREEN)✓ Services started$(NC)"
+	@echo "$(YELLOW)  API: http://localhost:8888$(NC)"
+
+compose-up-attach: check-env ## Start services (attached, see logs)
+	@echo "$(BLUE)Starting services (attached)...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) up --build
+
+compose-down: ## Stop and remove services
+	@echo "$(BLUE)Stopping services...$(NC)"
+	$(DOCKER_COMPOSE) down
+	@echo "$(GREEN)✓ Services stopped$(NC)"
+
+compose-down-v: ## Stop services and remove volumes
+	@echo "$(BLUE)Stopping services and removing volumes...$(NC)"
+	$(DOCKER_COMPOSE) down -v
+	@echo "$(GREEN)✓ Services and volumes removed$(NC)"
+
+compose-restart: ## Restart services
+	@echo "$(BLUE)Restarting services...$(NC)"
+	$(DOCKER_COMPOSE) restart
+	@echo "$(GREEN)✓ Services restarted$(NC)"
+
+compose-logs: ## Show service logs (follow)
+	$(DOCKER_COMPOSE) logs -f
+
+compose-logs-tail: ## Show last 100 lines of logs
+	$(DOCKER_COMPOSE) logs --tail=100
+
+compose-ps: ## List running services
+	@echo "$(BLUE)Running services:$(NC)"
+	$(DOCKER_COMPOSE) ps
+
+compose-exec: ## Open shell in backend container
+	$(DOCKER_COMPOSE) exec backend /bin/bash
+
+compose-pull: ## Pull latest images
+	@echo "$(BLUE)Pulling images...$(NC)"
+	$(DOCKER_COMPOSE) pull
+	@echo "$(GREEN)✓ Images pulled$(NC)"
+
+compose-config: ## Validate and view compose config
+	@echo "$(BLUE)Docker Compose Configuration:$(NC)"
+	$(DOCKER_COMPOSE) config
+
+# =============================================================================
+# Docker Compose Development Mode (with hot reload)
+# =============================================================================
+
+compose-dev: check-env ## Start in dev mode (mounts local code, hot reload)
+	@echo "$(BLUE)Starting in development mode with hot reload...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+	@echo "$(GREEN)✓ Development server started$(NC)"
+	@echo "$(YELLOW)  API: http://localhost:8888$(NC)"
+	@echo "$(YELLOW)  Local code is mounted - changes apply automatically$(NC)"
+	@echo "$(YELLOW)  Logs: make compose-dev-logs$(NC)"
+
+compose-dev-attach: check-env ## Start in dev mode (attached, see logs)
+	@echo "$(BLUE)Starting in development mode (attached)...$(NC)"
+	@mkdir -p garak_reports
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+compose-dev-down: ## Stop dev mode services
+	@echo "$(BLUE)Stopping development services...$(NC)"
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml down
+	@echo "$(GREEN)✓ Development services stopped$(NC)"
+
+compose-dev-logs: ## Show dev mode logs
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml logs -f
+
+compose-dev-restart: ## Restart dev mode services
+	@echo "$(BLUE)Restarting development services...$(NC)"
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml restart
+	@echo "$(GREEN)✓ Development services restarted$(NC)"

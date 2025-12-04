@@ -377,7 +377,7 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: scan.progress ?? (isActive ? null : (isCompleted ? 1.0 : 0.0)),
+                value: scan.progress != null ? scan.progress! / 100 : (isActive ? null : (isCompleted ? 1.0 : 0.0)),
                 minHeight: 8,
                 backgroundColor: theme.colorScheme.surfaceContainerHighest,
                 valueColor: AlwaysStoppedAnimation<Color>(
@@ -393,7 +393,7 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${(scan.progress! * 100).toStringAsFixed(1)}% complete',
+                    '${scan.progress!.toStringAsFixed(1)}% complete',
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
@@ -568,7 +568,7 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
             const SizedBox(height: 12),
             if (scan.progress != null)
               Text(
-                'Current progress: ${(scan.progress! * 100).toStringAsFixed(1)}%',
+                'Current progress: ${scan.progress!.toStringAsFixed(1)}%',
                 style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
                   color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
                 ),
@@ -661,7 +661,7 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
               _buildDetailRow('Started', scan.startTime.toString()),
               _buildDetailRow('Status', _getStatusText(scan)),
               if (scan.progress != null)
-                _buildDetailRow('Progress', '${(scan.progress! * 100).toStringAsFixed(1)}%'),
+                _buildDetailRow('Progress', '${scan.progress!.toStringAsFixed(1)}%'),
             ],
           ),
         ),

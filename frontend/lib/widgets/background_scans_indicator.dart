@@ -68,7 +68,7 @@ class BackgroundScansIndicator extends ConsumerWidget {
                           ),
                           if (activeScans.length == 1 && activeScans.first.progress != null)
                             Text(
-                              '${(activeScans.first.progress! * 100).toStringAsFixed(0)}% complete',
+                              '${activeScans.first.progress!.toStringAsFixed(0)}% complete',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                         ],
@@ -278,7 +278,7 @@ class BackgroundScansIndicator extends ConsumerWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: scan.progress,
+                  value: scan.progress! / 100,  // Convert percentage (0-100) to fraction (0-1)
                   minHeight: 8,
                   backgroundColor: theme.colorScheme.surfaceContainerHighest,
                   valueColor: AlwaysStoppedAnimation<Color>(
@@ -291,7 +291,7 @@ class BackgroundScansIndicator extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${(scan.progress! * 100).toStringAsFixed(0)}% complete',
+                    '${scan.progress!.toStringAsFixed(0)}% complete',
                     style: theme.textTheme.bodySmall,
                   ),
                   Text(

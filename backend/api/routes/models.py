@@ -4,6 +4,7 @@ Model listing endpoints for all generator types
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Optional
 import logging
+from services.model_discovery import get_ollama_discovery
 
 logger = logging.getLogger(__name__)
 
@@ -261,81 +262,13 @@ GENERATOR_MODELS = {
         "api_key_env_var": "REPLICATE_API_TOKEN",
         "note": "Format: owner/model-name"
     },
+    # Note: Ollama models are fetched dynamically via model_discovery service
+    # This static entry is kept for fallback and metadata reference only
     "ollama": {
-        "models": [
-            {
-                "id": "llama3.2",
-                "name": "Llama 3.2",
-                "description": "Meta's latest Llama model",
-                "context_length": 128000,
-                "recommended": True
-            },
-            {
-                "id": "llama3.1",
-                "name": "Llama 3.1",
-                "description": "Previous Llama 3 version",
-                "context_length": 128000,
-                "recommended": True
-            },
-            {
-                "id": "llama2",
-                "name": "Llama 2",
-                "description": "Meta's Llama 2",
-                "context_length": 4096,
-                "recommended": False
-            },
-            {
-                "id": "mistral",
-                "name": "Mistral",
-                "description": "Mistral 7B model",
-                "context_length": 8192,
-                "recommended": True
-            },
-            {
-                "id": "mixtral",
-                "name": "Mixtral",
-                "description": "Mixtral 8x7B model",
-                "context_length": 32768,
-                "recommended": True
-            },
-            {
-                "id": "gemma2",
-                "name": "Gemma 2",
-                "description": "Google's Gemma 2",
-                "context_length": 8192,
-                "recommended": True
-            },
-            {
-                "id": "phi3",
-                "name": "Phi-3",
-                "description": "Microsoft's Phi-3",
-                "context_length": 128000,
-                "recommended": False
-            },
-            {
-                "id": "qwen2",
-                "name": "Qwen 2",
-                "description": "Alibaba's Qwen 2",
-                "context_length": 32768,
-                "recommended": False
-            },
-            {
-                "id": "codellama",
-                "name": "Code Llama",
-                "description": "Code-focused Llama",
-                "context_length": 16384,
-                "recommended": False
-            },
-            {
-                "id": "vicuna",
-                "name": "Vicuna",
-                "description": "LMSys Vicuna",
-                "context_length": 2048,
-                "recommended": False
-            },
-        ],
+        "models": [],  # Populated dynamically
         "requires_api_key": False,
-        "note": "Requires Ollama running locally. Use 'ollama pull <model>' to download."
+        "note": "Models fetched dynamically from Ollama. Use 'ollama pull <model>' to download.",
+        "dynamic": True  # Flag indicating this uses dynamic discovery
     },
     "litellm": {
         "models": [
@@ -457,9 +390,69 @@ async def list_generator_models(generator_type: str):
             detail=f"Generator type '{generator_type}' not found. Available types: {list(GENERATOR_MODELS.keys())}"
         )
 
+    # Handle Ollama dynamically
+    if generator_type == "ollama":
+        return await _get_ollama_models()
+
     return {
         "generator_type": generator_type,
         **GENERATOR_MODELS[generator_type]
+    }
+
+
+async def _get_ollama_models() -> Dict:
+    """Fetch Ollama models dynamically."""
+    discovery = get_ollama_discovery()
+    result = await discovery.fetch_models()
+
+    return {
+        "generator_type": "ollama",
+        "models": result.get("models", []),
+        "requires_api_key": False,
+        "note": GENERATOR_MODELS["ollama"]["note"],
+        "ollama_status": result.get("ollama_status", "unknown"),
+        "ollama_host": result.get("ollama_host"),
+        "model_count": result.get("model_count", 0),
+        "last_updated": result.get("last_updated"),
+        "error": result.get("error"),
+    }
+
+
+@router.post("/ollama/refresh")
+async def refresh_ollama_models():
+    """
+    Force refresh the Ollama model list (bypass cache)
+
+    Returns:
+        Updated model list from Ollama
+    """
+    discovery = get_ollama_discovery()
+    discovery.clear_cache()
+    result = await discovery.fetch_models(force_refresh=True)
+
+    return {
+        "message": "Ollama model list refreshed",
+        "generator_type": "ollama",
+        "models": result.get("models", []),
+        "ollama_status": result.get("ollama_status", "unknown"),
+        "model_count": result.get("model_count", 0),
+    }
+
+
+@router.get("/ollama/status")
+async def get_ollama_status():
+    """
+    Check Ollama connection status
+
+    Returns:
+        Connection status and basic info
+    """
+    discovery = get_ollama_discovery()
+    is_connected = await discovery.check_connection()
+
+    return {
+        "connected": is_connected,
+        "host": discovery.ollama_host,
     }
 
 
@@ -471,10 +464,22 @@ async def list_all_models():
     Returns:
         Complete model catalog organized by generator type
     """
+    # Create a copy of static models
+    generators = dict(GENERATOR_MODELS)
+
+    # Fetch Ollama models dynamically
+    ollama_data = await _get_ollama_models()
+    generators["ollama"] = {
+        "models": ollama_data.get("models", []),
+        "requires_api_key": False,
+        "note": ollama_data.get("note"),
+        "ollama_status": ollama_data.get("ollama_status"),
+    }
+
     return {
-        "generators": GENERATOR_MODELS,
-        "total_generators": len(GENERATOR_MODELS),
-        "total_models": sum(len(data["models"]) for data in GENERATOR_MODELS.values())
+        "generators": generators,
+        "total_generators": len(generators),
+        "total_models": sum(len(data["models"]) for data in generators.values())
     }
 
 

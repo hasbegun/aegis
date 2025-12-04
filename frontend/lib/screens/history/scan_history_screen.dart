@@ -126,7 +126,9 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
     if (_searchQuery.isNotEmpty) {
       scans = scans.where((scan) {
         final scanId = scan['scan_id']?.toString().toLowerCase() ?? '';
-        final targetName = scan['target_name']?.toString().toLowerCase() ?? '';
+        // target_name can be at top level (historical scans) or nested in config (active scans)
+        final config = scan['config'] as Map<String, dynamic>?;
+        final targetName = (scan['target_name']?.toString() ?? config?['target_name']?.toString() ?? '').toLowerCase();
         final status = scan['status']?.toString().toLowerCase() ?? '';
         final startedAt = scan['started_at']?.toString().toLowerCase() ?? '';
         // Format date for searching (e.g., "dec 3, 2025")
@@ -152,7 +154,12 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
         case 'status':
           return (a['status']?.toString() ?? '').compareTo(b['status']?.toString() ?? '');
         case 'name':
-          return (a['target_name']?.toString() ?? '').compareTo(b['target_name']?.toString() ?? '');
+          // target_name can be at top level or nested in config
+          final configA = a['config'] as Map<String, dynamic>?;
+          final configB = b['config'] as Map<String, dynamic>?;
+          final nameA = a['target_name']?.toString() ?? configA?['target_name']?.toString() ?? '';
+          final nameB = b['target_name']?.toString() ?? configB?['target_name']?.toString() ?? '';
+          return nameA.compareTo(nameB);
         default:
           return 0;
       }
@@ -273,7 +280,11 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
 
   Widget _buildScanCard(ThemeData theme, Map<String, dynamic> scan) {
     final scanId = scan['scan_id'] as String?;
-    final targetName = scan['target_name'] as String? ?? 'Unknown';
+    // target_name can be at top level (historical scans) or nested in config (active scans)
+    final config = scan['config'] as Map<String, dynamic>?;
+    final targetName = scan['target_name'] as String?
+        ?? config?['target_name'] as String?
+        ?? 'Unknown';
     final status = scan['status'] as String? ?? 'unknown';
     final startedAt = scan['started_at'] as String?;
     final passed = scan['passed'] as int? ?? 0;

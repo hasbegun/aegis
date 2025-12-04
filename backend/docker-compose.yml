@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-backend
+    ports:
+      - "${PORT:-8888}:8888"
+    environment:
+      # Server Configuration
+      HOST: "0.0.0.0"
+      PORT: "8888"
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      # Garak Configuration
+      GARAK_REPORTS_DIR: "/data/garak_reports"
+
+      # LLM API Keys (pass from host environment or .env file)
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      COHERE_API_KEY: "${COHERE_API_KEY:-}"
+      HF_INFERENCE_TOKEN: "${HF_INFERENCE_TOKEN:-}"
+      REPLICATE_API_TOKEN: "${REPLICATE_API_TOKEN:-}"
+      NIM_API_KEY: "${NIM_API_KEY:-}"
+      MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
+
+      # Ollama Configuration (for local models)
+      OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
+    volumes:
+      # Mount local directory for persistent scan reports
+      # Change GARAK_REPORTS_HOST_DIR in .env to customize the host path
+      - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
+    networks:
+      - aegis-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  aegis-network:
+    driver: bridge

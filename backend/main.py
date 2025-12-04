@@ -2,10 +2,12 @@
 Garak Backend - FastAPI wrapper for garak CLI
 Main entry point for the API server
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import scan, plugins, config, system, custom_probes, workflow, models
 from config import settings
+from services.model_discovery import initialize_model_discovery
 import logging
 
 # Configure logging
@@ -15,7 +17,22 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-logger.info(f"Starting Garak Backend on {settings.host}:{settings.port}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan handler for startup and shutdown events."""
+    # Startup
+    logger.info(f"Starting Garak Backend on {settings.host}:{settings.port}")
+
+    # Initialize model discovery (fetches Ollama models)
+    logger.info("Initializing model discovery...")
+    await initialize_model_discovery()
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Garak Backend...")
 
 # Create FastAPI app
 app = FastAPI(
@@ -23,7 +40,8 @@ app = FastAPI(
     description="REST API wrapper for the garak LLM vulnerability scanner",
     version="1.0.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
+    lifespan=lifespan
 )
 
 # Configure CORS
@@ -49,7 +67,7 @@ app.include_router(models.router, prefix="/api/v1/generators", tags=["Models"])
 async def root():
     """Root endpoint - API health check"""
     return {
-        "name": "Garak Backend API",
+        "name": "Aegis Backend API",
         "version": "1.0.0",
         "status": "running",
         "docs": "/api/docs"

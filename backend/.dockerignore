@@ -1,0 +1,68 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+*.egg
+.pytest_cache
+.coverage
+htmlcov
+.tox
+.nox
+.mypy_cache
+.ruff_cache
+
+# Virtual environments
+venv
+.venv
+env
+.env.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.docker
+
+# Documentation (not needed in container)
+*.md
+!requirements.txt
+
+# Test files
+tests
+test_*.py
+*_test.py
+*.test.py
+sample_*.json
+test_*.jsonl
+test_*.html
+
+# Local data (should be mounted as volume)
+garak_reports
+*.log
+
+# Garak (cloned from GitHub during container build)
+garak
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

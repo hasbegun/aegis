@@ -1,0 +1,52 @@
+# Docker Compose Development Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Or simply: make compose-dev
+
+version: '3.8'
+
+services:
+  backend:
+    # Override command to enable hot reload
+    # Exclude garak directory from reload watching since we use container's installed version
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8888
+      --reload
+      --reload-dir /app/api
+      --reload-dir /app/services
+      --reload-dir /app/models
+
+    # Development environment
+    environment:
+      LOG_LEVEL: DEBUG
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+
+      # Garak reports directory (for scan reports)
+      GARAK_REPORTS_DIR: "/data/garak_reports"
+
+      # Connect to local Ollama service running on host
+      # host.docker.internal resolves to host machine on Docker Desktop (macOS/Windows)
+      # For Linux, use extra_hosts below
+      OLLAMA_HOST: "http://host.docker.internal:11434"
+
+    # Enable host.docker.internal on Linux
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      # Mount only specific directories for hot reload (NOT the entire app)
+      # This prevents local garak from overriding the container's installed version
+      - ./api:/app/api:cached
+      - ./services:/app/services:cached
+      - ./models:/app/models:cached
+      - ./config.py:/app/config.py:cached
+      - ./main.py:/app/main.py:cached
+
+      # Mount garak_reports for persistent scan reports
+      - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
+
+    # Disable health check in dev mode for faster startup
+    healthcheck:
+      disable: true
