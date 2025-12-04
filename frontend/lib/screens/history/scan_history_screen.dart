@@ -19,11 +19,18 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
   String? _error;
   String _searchQuery = '';
   String _sortBy = 'date';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
@@ -48,6 +55,69 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
     }
   }
 
+  Future<void> _confirmDelete(String scanId) async {
+    final l10n = AppLocalizations.of(context)!;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Scan'),
+        content: const Text('Are you sure you want to delete this scan? This will remove all associated reports and cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _deleteScan(scanId);
+    }
+  }
+
+  Future<void> _deleteScan(String scanId) async {
+    // Remove the scan from the UI list immediately
+    setState(() {
+      _scanHistory?.removeWhere((scan) => scan['scan_id'] == scanId);
+    });
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      await apiService.deleteScan(scanId);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Scan deleted successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      // Scan already removed from UI, just log and show info message
+      // The scan entry is gone from the UI regardless of backend state
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Scan removed from history'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   List<Map<String, dynamic>> get _filteredAndSortedScans {
     if (_scanHistory == null) return [];
 
@@ -58,9 +128,18 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
         final scanId = scan['scan_id']?.toString().toLowerCase() ?? '';
         final targetName = scan['target_name']?.toString().toLowerCase() ?? '';
         final status = scan['status']?.toString().toLowerCase() ?? '';
+        final startedAt = scan['started_at']?.toString().toLowerCase() ?? '';
+        // Format date for searching (e.g., "dec 3, 2025")
+        String formattedDate = '';
+        final startDate = DateTime.tryParse(scan['started_at'] ?? '');
+        if (startDate != null) {
+          formattedDate = DateFormat('MMM d, y HH:mm').format(startDate).toLowerCase();
+        }
         return scanId.contains(_searchQuery) ||
                targetName.contains(_searchQuery) ||
-               status.contains(_searchQuery);
+               status.contains(_searchQuery) ||
+               startedAt.contains(_searchQuery) ||
+               formattedDate.contains(_searchQuery);
       }).toList();
     }
 
@@ -161,6 +240,7 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
         Padding(
           padding: const EdgeInsets.all(AppConstants.defaultPadding),
           child: TextField(
+            controller: _searchController,
             decoration: InputDecoration(
               hintText: l10n.searchScans,
               prefixIcon: const Icon(Icons.search),
@@ -168,7 +248,10 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear),
-                      onPressed: () => setState(() => _searchQuery = ''),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
                     )
                   : null,
             ),
@@ -217,6 +300,13 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
                   const SizedBox(width: 8),
                   Expanded(child: Text(targetName, style: theme.textTheme.titleMedium)),
                   Chip(label: Text(status.toUpperCase()), labelStyle: theme.textTheme.labelSmall, backgroundColor: statusColor.withValues(alpha: 0.1)),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: scanId != null ? () => _confirmDelete(scanId) : null,
+                    tooltip: 'Delete scan',
+                    color: theme.colorScheme.error,
+                  ),
                 ],
               ),
               if (scanId != null) ...[

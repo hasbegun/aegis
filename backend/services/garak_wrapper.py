@@ -339,10 +339,13 @@ class GarakWrapper:
 
             # Execute command
             # Use STDOUT for both streams since garak outputs progress to stderr
+            # Create in new process group so we can kill all children when canceled
+            import os
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT  # Redirect stderr to stdout
+                stderr=asyncio.subprocess.STDOUT,  # Redirect stderr to stdout
+                preexec_fn=os.setpgrp if hasattr(os, 'setpgrp') else None  # Create new process group (Unix/macOS)
             )
 
             scan_info['process'] = process
@@ -599,32 +602,115 @@ class GarakWrapper:
         return None
 
     async def cancel_scan(self, scan_id: str) -> bool:
-        """Cancel a running scan"""
+        """Cancel a running scan and all its child processes"""
         scan_info = self.active_scans.get(scan_id)
 
         if not scan_info:
+            logger.warning(f"Cannot cancel scan {scan_id}: not found")
             return False
 
         if scan_info['status'] not in [ScanStatus.RUNNING, ScanStatus.PENDING]:
+            logger.warning(f"Cannot cancel scan {scan_id}: status is {scan_info['status']}")
             return False
 
         process = scan_info.get('process')
         if process:
             try:
-                process.terminate()
-                await asyncio.sleep(1)
+                import os
+                import signal
 
-                if process.returncode is None:
-                    process.kill()
+                # Get the process group ID
+                pid = process.pid
+                logger.info(f"Canceling scan {scan_id} (PID: {pid})")
+
+                # Kill the entire process group to ensure all child processes are terminated
+                if hasattr(os, 'killpg'):
+                    try:
+                        # On Unix/macOS, kill the process group
+                        os.killpg(os.getpgid(pid), signal.SIGTERM)
+                        logger.info(f"Sent SIGTERM to process group {pid}")
+                        await asyncio.sleep(1)
+
+                        # Force kill if still running
+                        if process.returncode is None:
+                            os.killpg(os.getpgid(pid), signal.SIGKILL)
+                            logger.info(f"Sent SIGKILL to process group {pid}")
+                    except ProcessLookupError:
+                        # Process already terminated
+                        logger.info(f"Process {pid} already terminated")
+                        pass
+                else:
+                    # Fallback for Windows
+                    process.terminate()
+                    await asyncio.sleep(1)
+                    if process.returncode is None:
+                        process.kill()
 
                 scan_info['status'] = ScanStatus.CANCELLED
                 scan_info['completed_at'] = datetime.now().isoformat()
+                logger.info(f"Scan {scan_id} cancelled successfully")
                 return True
             except Exception as e:
                 logger.error(f"Error cancelling scan {scan_id}: {e}")
                 return False
 
+        logger.warning(f"Cannot cancel scan {scan_id}: no process found")
         return False
+
+    def delete_scan(self, scan_id: str) -> bool:
+        """Delete a scan and all its associated reports.
+
+        Always returns True to allow UI to remove entries even if files don't exist.
+        This handles cases where files were already deleted or never existed.
+        """
+        from pathlib import Path
+
+        # Remove from active scans if present
+        if scan_id in self.active_scans:
+            scan_info = self.active_scans[scan_id]
+            # Cancel the process if still running
+            if scan_info.get('process'):
+                try:
+                    import asyncio
+                    asyncio.create_task(self.cancel_scan(scan_id))
+                except Exception as e:
+                    logger.warning(f"Failed to cancel running scan {scan_id}: {e}")
+
+            del self.active_scans[scan_id]
+            logger.info(f"Removed scan {scan_id} from active scans")
+
+        # Delete report files if they exist
+        garak_runs_dir = Path.home() / ".local" / "share" / "garak" / "garak_runs"
+        if garak_runs_dir.exists():
+            deleted_files = []
+            try:
+                # Find and delete all files related to this scan
+                for file_pattern in [
+                    f"garak.{scan_id}.report.jsonl",
+                    f"garak.{scan_id}.report.html",
+                    f"garak.{scan_id}.*",  # Catch any other files
+                ]:
+                    for file_path in garak_runs_dir.glob(file_pattern):
+                        try:
+                            file_path.unlink()
+                            deleted_files.append(str(file_path))
+                            logger.info(f"Deleted report file: {file_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to delete file {file_path}: {e}")
+
+                if deleted_files:
+                    logger.info(f"Deleted {len(deleted_files)} file(s) for scan {scan_id}")
+                else:
+                    logger.info(f"No report files found for scan {scan_id} (already deleted or never existed)")
+
+            except Exception as e:
+                logger.error(f"Error deleting report files for scan {scan_id}: {e}")
+
+        # Always return True - the scan entry should be removed from history
+        # regardless of whether files existed. This allows users to clean up
+        # stale entries where files were already deleted.
+        logger.info(f"Delete request processed for scan {scan_id}")
+        return True
 
     def get_all_scans(self) -> List[Dict[str, Any]]:
         """

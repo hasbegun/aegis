@@ -143,6 +143,22 @@ class ActiveScanNotifier extends StateNotifier<ActiveScanState> {
     }
   }
 
+  /// Resume a scan with existing state (from background)
+  void resumeWithState(String scanId, ScanStatusInfo? currentStatus) {
+    // Disconnect any existing WebSocket
+    disconnectWebSocket();
+
+    // Set state with existing scan ID and status
+    state = ActiveScanState(
+      scanId: scanId,
+      status: currentStatus,
+      isLoading: false,
+    );
+
+    // Connect WebSocket for real-time updates
+    connectWebSocket(scanId);
+  }
+
   /// Reset scan state
   void reset() {
     disconnectWebSocket();

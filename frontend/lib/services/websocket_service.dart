@@ -97,6 +97,7 @@ class WebSocketService {
 
   void _handleMessage(String expectedScanId, dynamic message) {
     try {
+      _logger.d('Received WebSocket message for scan $expectedScanId');
       final data = json.decode(message as String);
 
       // Check for error messages
@@ -114,6 +115,7 @@ class WebSocketService {
 
       // Parse status update
       if (data.containsKey('scan_id')) {
+        _logger.d('Parsing status update: progress=${data['progress']}, status=${data['status']}');
         final statusInfo = ScanStatusInfo.fromJson(data);
 
         // IMPORTANT: Verify scan ID matches expected scan
@@ -124,14 +126,22 @@ class WebSocketService {
           return;
         }
 
+        _logger.d('Parsed status: progress=${statusInfo.progress}, status=${statusInfo.status}');
+
         // Send update to the correct scan's controller
         final connection = _connections[expectedScanId];
         if (connection != null && !connection.controller.isClosed) {
+          _logger.d('Adding status to controller for scan $expectedScanId');
           connection.controller.add(statusInfo);
+        } else {
+          _logger.w('Connection not found or controller closed for scan $expectedScanId');
         }
+      } else {
+        _logger.w('Message does not contain scan_id field');
       }
     } catch (e) {
       _logger.e('Error parsing WebSocket message for scan $expectedScanId: $e');
+      _logger.e('Stack trace: ${StackTrace.current}');
     }
   }
 

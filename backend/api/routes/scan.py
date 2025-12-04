@@ -104,6 +104,28 @@ async def cancel_scan(scan_id: str):
     return {"message": f"Scan {scan_id} cancelled successfully"}
 
 
+@router.delete("/{scan_id}")
+async def delete_scan(scan_id: str):
+    """
+    Delete a scan and all its associated reports
+
+    Args:
+        scan_id: Unique scan identifier
+
+    Returns:
+        Success message
+    """
+    success = garak_wrapper.delete_scan(scan_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scan {scan_id} not found or could not be deleted."
+        )
+
+    return {"message": f"Scan {scan_id} deleted successfully"}
+
+
 @router.get("/history")
 async def get_scan_history():
     """

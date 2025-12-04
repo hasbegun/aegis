@@ -138,6 +138,8 @@ class BackgroundScanService {
 
       scan.wsSubscription = stream.listen(
         (statusInfo) {
+          _logger.d('Received status update for scan ${scan.scanId}: progress=${statusInfo.progress}%, status=${statusInfo.status}');
+
           // Update scan status
           scan.status = statusInfo;
 

@@ -128,6 +128,17 @@ class ApiService {
     }
   }
 
+  /// Delete a scan and its reports
+  Future<void> deleteScan(String scanId) async {
+    try {
+      await _dio.delete('/scan/$scanId');
+      _logger.i('Scan $scanId deleted successfully');
+    } on DioException catch (e) {
+      _logger.e('Error deleting scan: ${e.message}');
+      throw ApiException.fromDioException(e);
+    }
+  }
+
   // ============================================================================
   // Plugin Discovery
   // ============================================================================

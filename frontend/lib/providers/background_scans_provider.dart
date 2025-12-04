@@ -130,18 +130,17 @@ class BackgroundScanActions {
     final scan = service.getScan(scanId);
 
     if (scan != null) {
-      // Set as active scan
-      final activeScanNotifier = _ref.read(activeScanProvider.notifier);
-
       // Transfer ownership back to active scan provider
-      // Note: We don't reconnect WebSocket here as it's already connected
-      // in the background service. We just update the UI state.
+      final activeScanNotifier = _ref.read(activeScanProvider.notifier);
 
       // Remove from background (this will dispose the WebSocket)
       service.removeFromBackground(scanId);
 
-      // Reconnect in active scan provider
-      activeScanNotifier.connectWebSocket(scanId);
+      // Resume in active scan provider with current state
+      activeScanNotifier.resumeWithState(scanId, scan.status);
+
+      // Also set the scan config so it's available in the execution screen
+      _ref.read(scanConfigProvider.notifier).setConfig(scan.config);
     }
   }
 

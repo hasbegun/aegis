@@ -91,6 +91,11 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
     state = state!.copyWith(reportPrefix: prefix);
   }
 
+  /// Set entire configuration (used when resuming from background)
+  void setConfig(ScanConfig config) {
+    state = config;
+  }
+
   /// Reset configuration
   void reset() {
     state = null;
