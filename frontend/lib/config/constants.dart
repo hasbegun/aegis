@@ -29,7 +29,7 @@ class AppConstants {
   // Scan Defaults
   static const int defaultGenerations = 10;
   static const double defaultEvalThreshold = 0.5;
-  static const int maxGenerations = 100;
+  static const int maxGenerations = 500;
   static const int minGenerations = 1;
 
   // UI Constants
@@ -50,13 +50,21 @@ class GeneratorTypes {
   static const String litellm = 'litellm';
   static const String nim = 'nim';
   static const String ollama = 'ollama';
+  static const String groq = 'groq';
+  static const String mistral = 'mistral';
+  static const String azure = 'azure';
+  static const String bedrock = 'bedrock';
 
   static const List<String> all = [
     openai,
     huggingface,
-    replicate,
-    cohere,
     anthropic,
+    cohere,
+    groq,
+    mistral,
+    azure,
+    bedrock,
+    replicate,
     litellm,
     nim,
     ollama,
@@ -81,6 +89,14 @@ class GeneratorTypes {
         return 'NVIDIA NIM';
       case ollama:
         return 'Ollama';
+      case groq:
+        return 'Groq';
+      case mistral:
+        return 'Mistral AI';
+      case azure:
+        return 'Azure OpenAI';
+      case bedrock:
+        return 'AWS Bedrock';
       default:
         return type;
     }

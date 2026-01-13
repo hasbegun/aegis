@@ -366,6 +366,181 @@ GENERATOR_MODELS = {
         "requires_api_key": True,
         "api_key_env_var": "NIM_API_KEY",
         "note": "NVIDIA NIM microservices. Get API key from build.nvidia.com"
+    },
+    "groq": {
+        "models": [
+            {
+                "id": "llama-3.3-70b-versatile",
+                "name": "Llama 3.3 70B Versatile",
+                "description": "Latest Llama 3.3 with 128K context",
+                "context_length": 128000,
+                "recommended": True
+            },
+            {
+                "id": "llama-3.1-8b-instant",
+                "name": "Llama 3.1 8B Instant",
+                "description": "Fast, efficient Llama model",
+                "context_length": 128000,
+                "recommended": True
+            },
+            {
+                "id": "llama-3.1-70b-versatile",
+                "name": "Llama 3.1 70B Versatile",
+                "description": "Large Llama 3.1 model",
+                "context_length": 128000,
+                "recommended": False
+            },
+            {
+                "id": "mixtral-8x7b-32768",
+                "name": "Mixtral 8x7B",
+                "description": "Mixtral MoE model",
+                "context_length": 32768,
+                "recommended": False
+            },
+            {
+                "id": "gemma2-9b-it",
+                "name": "Gemma 2 9B",
+                "description": "Google Gemma 2 instruction-tuned",
+                "context_length": 8192,
+                "recommended": False
+            },
+        ],
+        "requires_api_key": True,
+        "api_key_env_var": "GROQ_API_KEY",
+        "note": "Groq provides ultra-fast inference. Get API key from console.groq.com"
+    },
+    "mistral": {
+        "models": [
+            {
+                "id": "mistral-large-latest",
+                "name": "Mistral Large",
+                "description": "Most capable Mistral model",
+                "context_length": 128000,
+                "recommended": True
+            },
+            {
+                "id": "mistral-small-latest",
+                "name": "Mistral Small",
+                "description": "Fast and cost-effective",
+                "context_length": 128000,
+                "recommended": True
+            },
+            {
+                "id": "mistral-medium-latest",
+                "name": "Mistral Medium",
+                "description": "Balanced performance",
+                "context_length": 32768,
+                "recommended": False
+            },
+            {
+                "id": "open-mistral-7b",
+                "name": "Open Mistral 7B",
+                "description": "Open-source base model",
+                "context_length": 32768,
+                "recommended": False
+            },
+            {
+                "id": "open-mixtral-8x7b",
+                "name": "Open Mixtral 8x7B",
+                "description": "Open-source MoE model",
+                "context_length": 32768,
+                "recommended": False
+            },
+            {
+                "id": "codestral-latest",
+                "name": "Codestral",
+                "description": "Optimized for code generation",
+                "context_length": 32768,
+                "recommended": False
+            },
+        ],
+        "requires_api_key": True,
+        "api_key_env_var": "MISTRAL_API_KEY",
+        "note": "Mistral AI models. Get API key from console.mistral.ai"
+    },
+    "azure": {
+        "models": [
+            {
+                "id": "gpt-4o",
+                "name": "GPT-4o (Azure)",
+                "description": "Most capable Azure OpenAI model",
+                "context_length": 128000,
+                "recommended": True
+            },
+            {
+                "id": "gpt-4-turbo",
+                "name": "GPT-4 Turbo (Azure)",
+                "description": "Fast GPT-4 on Azure",
+                "context_length": 128000,
+                "recommended": False
+            },
+            {
+                "id": "gpt-4",
+                "name": "GPT-4 (Azure)",
+                "description": "Standard GPT-4 on Azure",
+                "context_length": 8192,
+                "recommended": False
+            },
+            {
+                "id": "gpt-35-turbo",
+                "name": "GPT-3.5 Turbo (Azure)",
+                "description": "Fast and cost-effective",
+                "context_length": 16384,
+                "recommended": True
+            },
+        ],
+        "requires_api_key": True,
+        "api_key_env_var": "AZURE_OPENAI_API_KEY",
+        "note": "Azure OpenAI Service. Also requires AZURE_OPENAI_ENDPOINT. Model ID should match your deployment name."
+    },
+    "bedrock": {
+        "models": [
+            {
+                "id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                "name": "Claude 3.5 Sonnet v2",
+                "description": "Latest Claude on Bedrock",
+                "context_length": 200000,
+                "recommended": True
+            },
+            {
+                "id": "anthropic.claude-3-haiku-20240307-v1:0",
+                "name": "Claude 3 Haiku",
+                "description": "Fast Claude on Bedrock",
+                "context_length": 200000,
+                "recommended": True
+            },
+            {
+                "id": "anthropic.claude-3-sonnet-20240229-v1:0",
+                "name": "Claude 3 Sonnet",
+                "description": "Balanced Claude on Bedrock",
+                "context_length": 200000,
+                "recommended": False
+            },
+            {
+                "id": "amazon.titan-text-express-v1",
+                "name": "Amazon Titan Text Express",
+                "description": "Amazon's foundation model",
+                "context_length": 8000,
+                "recommended": False
+            },
+            {
+                "id": "meta.llama3-1-70b-instruct-v1:0",
+                "name": "Llama 3.1 70B (Bedrock)",
+                "description": "Meta Llama on Bedrock",
+                "context_length": 128000,
+                "recommended": False
+            },
+            {
+                "id": "mistral.mistral-large-2407-v1:0",
+                "name": "Mistral Large (Bedrock)",
+                "description": "Mistral on Bedrock",
+                "context_length": 128000,
+                "recommended": False
+            },
+        ],
+        "requires_api_key": True,
+        "api_key_env_var": "AWS_ACCESS_KEY_ID",
+        "note": "AWS Bedrock. Requires AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_DEFAULT_REGION environment variables."
     }
 }
 

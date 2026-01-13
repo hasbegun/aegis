@@ -451,12 +451,17 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
 
   bool _needsApiKey(String? type) {
     if (type == null) return false;
-    // Ollama and HuggingFace can run locally without API keys
+    // Ollama, HuggingFace, and LiteLLM can run without API keys (local or proxy)
     return [
       GeneratorTypes.openai,
       GeneratorTypes.anthropic,
       GeneratorTypes.cohere,
       GeneratorTypes.replicate,
+      GeneratorTypes.groq,
+      GeneratorTypes.mistral,
+      GeneratorTypes.azure,
+      GeneratorTypes.bedrock,
+      GeneratorTypes.nim,
     ].contains(type);
   }
 

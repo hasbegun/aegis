@@ -238,6 +238,34 @@ class GarakWrapper:
             probes_str = ','.join(probes_cleaned)
             cmd.extend(['--probes', probes_str])
 
+        # Probe tags filter (e.g., 'owasp:llm01')
+        if config.probe_tags:
+            cmd.extend(['--probe_tags', config.probe_tags])
+
+        # System prompt override
+        if config.system_prompt:
+            cmd.extend(['--system_prompt', config.system_prompt])
+
+        # Extended detectors (run all detectors instead of primary only)
+        if config.extended_detectors:
+            cmd.append('--extended_detectors')
+
+        # Deprefix (remove prompt from generator output)
+        if config.deprefix:
+            cmd.append('--deprefix')
+
+        # Verbose mode (add -v flags based on level)
+        if config.verbose > 0:
+            cmd.append('-' + 'v' * config.verbose)
+
+        # Skip unknown plugins
+        if config.skip_unknown:
+            cmd.append('--skip_unknown')
+
+        # Buffs include original prompt
+        if config.buffs_include_original_prompt:
+            cmd.append('--buffs_include_original_prompt')
+
         # Detectors - strip 'detectors.' prefix if present
         if config.detectors:
             detectors_cleaned = [d.replace('detectors.', '', 1) if d.startswith('detectors.') else d for d in config.detectors]

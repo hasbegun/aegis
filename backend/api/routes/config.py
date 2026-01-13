@@ -115,8 +115,8 @@ async def validate_config(config: dict):
 
     # Validate ranges
     if 'generations' in config:
-        if not 1 <= config['generations'] <= 100:
-            errors.append("generations must be between 1 and 100")
+        if not 1 <= config['generations'] <= 500:
+            errors.append("generations must be between 1 and 500")
 
     if 'eval_threshold' in config:
         if not 0.0 <= config['eval_threshold'] <= 1.0:

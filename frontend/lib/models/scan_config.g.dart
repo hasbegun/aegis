@@ -24,6 +24,14 @@ ScanConfig _$ScanConfigFromJson(Map<String, dynamic> json) => ScanConfig(
       generatorOptions: json['generator_options'] as Map<String, dynamic>?,
       probeOptions: json['probe_options'] as Map<String, dynamic>?,
       reportPrefix: json['report_prefix'] as String?,
+      probeTags: json['probe_tags'] as String?,
+      systemPrompt: json['system_prompt'] as String?,
+      extendedDetectors: json['extended_detectors'] as bool? ?? false,
+      deprefix: json['deprefix'] as bool? ?? false,
+      verbose: (json['verbose'] as num?)?.toInt() ?? 0,
+      skipUnknown: json['skip_unknown'] as bool? ?? false,
+      buffsIncludeOriginalPrompt:
+          json['buffs_include_original_prompt'] as bool? ?? false,
     );
 
 Map<String, dynamic> _$ScanConfigToJson(ScanConfig instance) =>
@@ -41,4 +49,11 @@ Map<String, dynamic> _$ScanConfigToJson(ScanConfig instance) =>
       'generator_options': instance.generatorOptions,
       'probe_options': instance.probeOptions,
       'report_prefix': instance.reportPrefix,
+      'probe_tags': instance.probeTags,
+      'system_prompt': instance.systemPrompt,
+      'extended_detectors': instance.extendedDetectors,
+      'deprefix': instance.deprefix,
+      'verbose': instance.verbose,
+      'skip_unknown': instance.skipUnknown,
+      'buffs_include_original_prompt': instance.buffsIncludeOriginalPrompt,
     };

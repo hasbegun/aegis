@@ -22,6 +22,13 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
       generatorOptions: state?.generatorOptions,
       probeOptions: state?.probeOptions,
       reportPrefix: state?.reportPrefix,
+      probeTags: state?.probeTags,
+      systemPrompt: state?.systemPrompt,
+      extendedDetectors: state?.extendedDetectors ?? false,
+      deprefix: state?.deprefix ?? false,
+      verbose: state?.verbose ?? 0,
+      skipUnknown: state?.skipUnknown ?? false,
+      buffsIncludeOriginalPrompt: state?.buffsIncludeOriginalPrompt ?? false,
     );
   }
 
@@ -89,6 +96,48 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
   void setReportPrefix(String? prefix) {
     if (state == null) return;
     state = state!.copyWith(reportPrefix: prefix);
+  }
+
+  /// Set probe tags filter (e.g., 'owasp:llm01')
+  void setProbeTags(String? tags) {
+    if (state == null) return;
+    state = state!.copyWith(probeTags: tags);
+  }
+
+  /// Set system prompt override
+  void setSystemPrompt(String? prompt) {
+    if (state == null) return;
+    state = state!.copyWith(systemPrompt: prompt);
+  }
+
+  /// Set extended detectors mode
+  void setExtendedDetectors(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(extendedDetectors: value);
+  }
+
+  /// Set deprefix mode
+  void setDeprefix(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(deprefix: value);
+  }
+
+  /// Set verbose level
+  void setVerbose(int level) {
+    if (state == null) return;
+    state = state!.copyWith(verbose: level);
+  }
+
+  /// Set skip unknown plugins mode
+  void setSkipUnknown(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(skipUnknown: value);
+  }
+
+  /// Set buffs include original prompt mode
+  void setBuffsIncludeOriginalPrompt(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(buffsIncludeOriginalPrompt: value);
   }
 
   /// Set entire configuration (used when resuming from background)

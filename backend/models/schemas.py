@@ -24,6 +24,10 @@ class GeneratorType(str, Enum):
     ANTHROPIC = "anthropic"
     LITELLM = "litellm"
     NIM = "nim"
+    GROQ = "groq"
+    MISTRAL = "mistral"
+    AZURE = "azure"
+    BEDROCK = "bedrock"
 
 
 class ScanConfigRequest(BaseModel):
@@ -35,7 +39,7 @@ class ScanConfigRequest(BaseModel):
     buffs: Optional[List[str]] = Field(default=None, description="List of buffs to apply (optional)")
 
     # Run parameters
-    generations: int = Field(default=5, ge=1, le=100, description="Number of generations per prompt")
+    generations: int = Field(default=5, ge=1, le=500, description="Number of generations per prompt")
     eval_threshold: float = Field(default=0.5, ge=0.0, le=1.0, description="Evaluation threshold")
     seed: Optional[int] = Field(default=None, description="Random seed for reproducibility")
 
@@ -50,6 +54,50 @@ class ScanConfigRequest(BaseModel):
     # Reporting
     report_prefix: Optional[str] = Field(default=None, description="Prefix for report files")
 
+    # Filtering
+    probe_tags: Optional[str] = Field(
+        default=None,
+        description="Filter probes by tag prefix (e.g., 'owasp:llm01')"
+    )
+
+    # System prompt
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Custom system prompt for the LLM"
+    )
+
+    # Extended detectors
+    extended_detectors: bool = Field(
+        default=False,
+        description="Run all detectors instead of primary only"
+    )
+
+    # Deprefix
+    deprefix: bool = Field(
+        default=False,
+        description="Remove prompt from generator output before analysis"
+    )
+
+    # Verbose
+    verbose: int = Field(
+        default=0,
+        ge=0,
+        le=3,
+        description="Verbosity level (0=default, 1=-v, 2=-vv, 3=-vvv)"
+    )
+
+    # Skip unknown plugins
+    skip_unknown: bool = Field(
+        default=False,
+        description="Skip unknown plugins instead of failing"
+    )
+
+    # Buffs include original prompt
+    buffs_include_original_prompt: bool = Field(
+        default=False,
+        description="Include original prompt alongside buffed versions"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -61,7 +109,8 @@ class ScanConfigRequest(BaseModel):
                 "generator_options": {
                     "temperature": 0.7,
                     "api_key": "sk-..."
-                }
+                },
+                "probe_tags": "owasp:llm01"
             }
         }
 

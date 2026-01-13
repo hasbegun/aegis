@@ -43,6 +43,34 @@ class ScanConfig {
   @JsonKey(name: 'report_prefix')
   final String? reportPrefix;
 
+  // Filtering
+  @JsonKey(name: 'probe_tags')
+  final String? probeTags;
+
+  // System prompt
+  @JsonKey(name: 'system_prompt')
+  final String? systemPrompt;
+
+  // Extended detectors
+  @JsonKey(name: 'extended_detectors')
+  final bool extendedDetectors;
+
+  // Deprefix
+  @JsonKey(name: 'deprefix')
+  final bool deprefix;
+
+  // Verbose
+  @JsonKey(name: 'verbose')
+  final int verbose;
+
+  // Skip unknown plugins
+  @JsonKey(name: 'skip_unknown')
+  final bool skipUnknown;
+
+  // Buffs include original prompt
+  @JsonKey(name: 'buffs_include_original_prompt')
+  final bool buffsIncludeOriginalPrompt;
+
   const ScanConfig({
     required this.targetType,
     required this.targetName,
@@ -57,6 +85,13 @@ class ScanConfig {
     this.generatorOptions,
     this.probeOptions,
     this.reportPrefix,
+    this.probeTags,
+    this.systemPrompt,
+    this.extendedDetectors = false,
+    this.deprefix = false,
+    this.verbose = 0,
+    this.skipUnknown = false,
+    this.buffsIncludeOriginalPrompt = false,
   });
 
   factory ScanConfig.fromJson(Map<String, dynamic> json) =>
@@ -78,6 +113,13 @@ class ScanConfig {
     Map<String, dynamic>? generatorOptions,
     Map<String, dynamic>? probeOptions,
     String? reportPrefix,
+    String? probeTags,
+    String? systemPrompt,
+    bool? extendedDetectors,
+    bool? deprefix,
+    int? verbose,
+    bool? skipUnknown,
+    bool? buffsIncludeOriginalPrompt,
   }) {
     return ScanConfig(
       targetType: targetType ?? this.targetType,
@@ -93,6 +135,13 @@ class ScanConfig {
       generatorOptions: generatorOptions ?? this.generatorOptions,
       probeOptions: probeOptions ?? this.probeOptions,
       reportPrefix: reportPrefix ?? this.reportPrefix,
+      probeTags: probeTags ?? this.probeTags,
+      systemPrompt: systemPrompt ?? this.systemPrompt,
+      extendedDetectors: extendedDetectors ?? this.extendedDetectors,
+      deprefix: deprefix ?? this.deprefix,
+      verbose: verbose ?? this.verbose,
+      skipUnknown: skipUnknown ?? this.skipUnknown,
+      buffsIncludeOriginalPrompt: buffsIncludeOriginalPrompt ?? this.buffsIncludeOriginalPrompt,
     );
   }
 }

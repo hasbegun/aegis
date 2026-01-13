@@ -19,6 +19,19 @@ class _ProbeSelectionScreenState extends ConsumerState<ProbeSelectionScreen> {
   final Set<String> _selectedProbes = {};
   bool _selectAll = false;
   String _searchQuery = '';
+  String? _selectedProbeTag;
+
+  // OWASP LLM Top 10 tags (only those available in garak)
+  static const List<(String?, String, String)> _owaspTags = [
+    (null, 'All', 'All probes'),
+    ('owasp:llm01', 'LLM01', 'Prompt Injection'),
+    ('owasp:llm02', 'LLM02', 'Insecure Output'),
+    ('owasp:llm04', 'LLM04', 'Model DoS'),
+    ('owasp:llm05', 'LLM05', 'Supply Chain'),
+    ('owasp:llm06', 'LLM06', 'Info Disclosure'),
+    ('owasp:llm09', 'LLM09', 'Overreliance'),
+    ('owasp:llm10', 'LLM10', 'Model Theft'),
+  ];
 
   void _startScan() {
     final l10n = AppLocalizations.of(context)!;
@@ -88,11 +101,79 @@ class _ProbeSelectionScreenState extends ConsumerState<ProbeSelectionScreen> {
 
           return Column(
             children: [
-              // Header with search and select all
+              // Header with OWASP filter, search and select all
               Padding(
                 padding: const EdgeInsets.all(AppConstants.defaultPadding),
                 child: Column(
                   children: [
+                    // OWASP LLM Top 10 filter chips
+                    SizedBox(
+                      height: 48,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _owaspTags.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final (tagValue, label, description) = _owaspTags[index];
+                          final isSelected = _selectedProbeTag == tagValue;
+                          return FilterChip(
+                            label: Text(label),
+                            tooltip: description,
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setState(() {
+                                _selectedProbeTag = selected ? tagValue : null;
+                              });
+                              // Update scan config with probe tag
+                              ref.read(scanConfigProvider.notifier).setProbeTags(
+                                selected ? tagValue : null,
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    // Show active filter indicator
+                    if (_selectedProbeTag != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.filter_alt,
+                              size: 16,
+                              color: theme.colorScheme.onPrimaryContainer,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Filter active: Only probes tagged with $_selectedProbeTag will be scanned',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onPrimaryContainer,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 16),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedProbeTag = null;
+                                });
+                                ref.read(scanConfigProvider.notifier).setProbeTags(null);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: AppConstants.defaultPadding),
                     TextField(
                       decoration: InputDecoration(
                         hintText: l10n.searchProbes,

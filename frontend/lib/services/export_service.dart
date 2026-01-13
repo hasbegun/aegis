@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
+import '../models/scan_config.dart';
 
 /// Service for exporting scan results in various formats
 class ExportService {
@@ -87,6 +88,38 @@ class ExportService {
       );
     } catch (e) {
       throw Exception('Failed to share results: $e');
+    }
+  }
+
+  /// Export scan configuration as JSON file
+  Future<String> exportConfig(ScanConfig config) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyy-MM-dd_HH-mm-ss').format(DateTime.now());
+      final filename = 'garak_config_$timestamp.json';
+      final file = File('${directory.path}/$filename');
+
+      final jsonString = const JsonEncoder.withIndent('  ').convert(config.toJson());
+      await file.writeAsString(jsonString);
+
+      return file.path;
+    } catch (e) {
+      throw Exception('Failed to export config: $e');
+    }
+  }
+
+  /// Share scan configuration via native share dialog
+  Future<void> shareConfig(ScanConfig config) async {
+    try {
+      final filePath = await exportConfig(config);
+
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        subject: 'Garak Scan Configuration',
+        text: 'Scan configuration exported from Aegis',
+      );
+    } catch (e) {
+      throw Exception('Failed to share config: $e');
     }
   }
 

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:aegis/l10n/app_localizations.dart';
 import '../../config/constants.dart';
+import '../../models/scan_config.dart';
 import '../../providers/plugins_provider.dart';
 import '../../providers/scan_config_provider.dart';
+import '../../services/export_service.dart';
 import '../../utils/ui_helpers.dart';
 import '../scan/scan_execution_screen.dart';
 
@@ -23,15 +25,22 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   int? _parallelRequests;
   int? _parallelAttempts;
   int? _seed;
+  bool _extendedDetectors = false;
+  bool _deprefix = false;
+  int _verbose = 0;
+  bool _skipUnknown = false;
+  bool _buffsIncludeOriginalPrompt = false;
   final TextEditingController _seedController = TextEditingController();
   final TextEditingController _parallelRequestsController = TextEditingController();
   final TextEditingController _parallelAttemptsController = TextEditingController();
+  final TextEditingController _systemPromptController = TextEditingController();
 
   @override
   void dispose() {
     _seedController.dispose();
     _parallelRequestsController.dispose();
     _parallelAttemptsController.dispose();
+    _systemPromptController.dispose();
     super.dispose();
   }
 
@@ -65,11 +74,77 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
       ref.read(scanConfigProvider.notifier).setSeed(_seed!);
     }
 
+    // Apply system prompt
+    if (_systemPromptController.text.isNotEmpty) {
+      ref.read(scanConfigProvider.notifier).setSystemPrompt(_systemPromptController.text);
+    }
+
+    // Apply extended detectors
+    ref.read(scanConfigProvider.notifier).setExtendedDetectors(_extendedDetectors);
+
+    // Apply deprefix
+    ref.read(scanConfigProvider.notifier).setDeprefix(_deprefix);
+
+    // Apply verbose
+    ref.read(scanConfigProvider.notifier).setVerbose(_verbose);
+
+    // Apply skip unknown
+    ref.read(scanConfigProvider.notifier).setSkipUnknown(_skipUnknown);
+
+    // Apply buffs include original prompt
+    ref.read(scanConfigProvider.notifier).setBuffsIncludeOriginalPrompt(_buffsIncludeOriginalPrompt);
+
     // Navigate to scan execution
     Navigator.push(
       context,
       UIHelpers.slideRoute(const ScanExecutionScreen()),
     );
+  }
+
+  Future<void> _exportConfig() async {
+    final config = ref.read(scanConfigProvider);
+
+    if (config == null) {
+      context.showError('No configuration to export');
+      return;
+    }
+
+    // Build complete config with current advanced selections
+    final exportConfig = ScanConfig(
+      targetType: config.targetType,
+      targetName: config.targetName,
+      probes: config.probes,
+      detectors: _selectedDetectors.isNotEmpty ? _selectedDetectors.toList() : config.detectors,
+      buffs: _selectedBuffs.isNotEmpty ? _selectedBuffs.toList() : config.buffs,
+      generations: config.generations,
+      evalThreshold: config.evalThreshold,
+      seed: _seed ?? config.seed,
+      parallelRequests: _parallelRequests ?? config.parallelRequests,
+      parallelAttempts: _parallelAttempts ?? config.parallelAttempts,
+      generatorOptions: config.generatorOptions,
+      probeOptions: config.probeOptions,
+      reportPrefix: config.reportPrefix,
+      probeTags: config.probeTags,
+      systemPrompt: _systemPromptController.text.isNotEmpty
+          ? _systemPromptController.text
+          : config.systemPrompt,
+      extendedDetectors: _extendedDetectors,
+      deprefix: _deprefix,
+      verbose: _verbose,
+      skipUnknown: _skipUnknown,
+      buffsIncludeOriginalPrompt: _buffsIncludeOriginalPrompt,
+    );
+
+    try {
+      await ExportService().shareConfig(exportConfig);
+      if (mounted) {
+        context.showSuccess('Configuration exported successfully');
+      }
+    } catch (e) {
+      if (mounted) {
+        context.showError('Failed to export: $e');
+      }
+    }
   }
 
   @override
@@ -80,6 +155,13 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.advancedConfiguration),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download),
+            onPressed: _exportConfig,
+            tooltip: 'Export Configuration',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
@@ -236,6 +318,15 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: const Text('Include Original Prompt'),
+              subtitle: const Text('Test original prompt alongside buffed versions'),
+              value: _buffsIncludeOriginalPrompt,
+              onChanged: (value) => setState(() => _buffsIncludeOriginalPrompt = value),
+              secondary: const Icon(Icons.add_circle_outline),
+              contentPadding: EdgeInsets.zero,
+            ),
           ],
         ),
       ),
@@ -428,6 +519,82 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
                   _seed = int.tryParse(value);
                 });
               },
+            ),
+            const SizedBox(height: 16),
+
+            // System Prompt
+            TextField(
+              controller: _systemPromptController,
+              decoration: const InputDecoration(
+                labelText: 'System Prompt',
+                hintText: 'e.g., You are a helpful assistant...',
+                helperText: 'Custom system prompt to use when testing the model (optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.psychology),
+                alignLabelWithHint: true,
+              ),
+              maxLines: 3,
+              minLines: 2,
+            ),
+            const SizedBox(height: 16),
+
+            // Extended Detectors Toggle
+            SwitchListTile(
+              title: const Text('Extended Detectors'),
+              subtitle: const Text('Run all detectors instead of primary only'),
+              value: _extendedDetectors,
+              onChanged: (value) => setState(() => _extendedDetectors = value),
+              secondary: const Icon(Icons.radar),
+              contentPadding: EdgeInsets.zero,
+            ),
+
+            // Deprefix Toggle
+            SwitchListTile(
+              title: const Text('Deprefix'),
+              subtitle: const Text('Remove prompt from output before analysis'),
+              value: _deprefix,
+              onChanged: (value) => setState(() => _deprefix = value),
+              secondary: const Icon(Icons.content_cut),
+              contentPadding: EdgeInsets.zero,
+            ),
+            const SizedBox(height: 16),
+
+            // Verbose Level
+            Row(
+              children: [
+                Icon(Icons.bug_report, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Verbosity',
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('Off')),
+                      ButtonSegment(value: 1, label: Text('-v')),
+                      ButtonSegment(value: 2, label: Text('-vv')),
+                      ButtonSegment(value: 3, label: Text('-vvv')),
+                    ],
+                    selected: {_verbose},
+                    onSelectionChanged: (Set<int> selected) {
+                      setState(() => _verbose = selected.first);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Skip Unknown Plugins Toggle
+            SwitchListTile(
+              title: const Text('Skip Unknown Plugins'),
+              subtitle: const Text('Continue scan even if some plugins are missing'),
+              value: _skipUnknown,
+              onChanged: (value) => setState(() => _skipUnknown = value),
+              secondary: const Icon(Icons.skip_next),
+              contentPadding: EdgeInsets.zero,
             ),
 
             const SizedBox(height: 16),
