@@ -5,10 +5,8 @@ import 'package:aegis/l10n/app_localizations.dart';
 import 'screens/home/home_screen.dart';
 import 'config/constants.dart';
 import 'providers/theme_provider.dart';
+import 'providers/locale_provider.dart';
 import 'providers/background_scans_provider.dart';
-
-// Locale provider for language selection
-final localeProvider = StateProvider<Locale?>((ref) => null);
 
 // Global provider container for accessing providers in main()
 final globalContainer = ProviderContainer();

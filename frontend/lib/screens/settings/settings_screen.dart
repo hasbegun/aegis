@@ -6,8 +6,8 @@ import 'package:aegis/l10n/app_localizations.dart';
 import '../../config/constants.dart';
 import '../../providers/api_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/locale_provider.dart';
 import '../../utils/ui_helpers.dart';
-import '../../main.dart';
 
 /// Settings screen for app configuration
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -112,7 +112,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(themeModeProvider.notifier).setDarkMode(false);
 
       // Reset locale to system default
-      ref.read(localeProvider.notifier).state = null;
+      await ref.read(localeProvider.notifier).setLocale(null);
 
       setState(() {
         _isDarkMode = false;
@@ -522,18 +522,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildLanguageSelector(ThemeData theme, AppLocalizations l10n) {
     final currentLocale = ref.watch(localeProvider);
-
-    // Map of supported locales to their display names
-    final localeNames = {
-      null: 'System Default',
-      const Locale('en'): 'English',
-      const Locale('ko'): 'Korean',
-      const Locale('ja'): 'Japanese',
-      const Locale('es'): 'Spanish',
-      const Locale('zh'): 'Chinese',
-    };
-
-    String currentLanguageName = localeNames[currentLocale] ?? 'System Default';
+    final currentLanguageName = LocaleNotifier.getDisplayName(currentLocale);
 
     return ListTile(
       leading: const Icon(Icons.language),
@@ -545,16 +534,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(l10n.language),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildLanguageOption(dialogContext, null, 'System Default', currentLocale),
-                _buildLanguageOption(dialogContext, const Locale('en'), 'English', currentLocale),
-                _buildLanguageOption(dialogContext, const Locale('ko'), 'Korean', currentLocale),
-                _buildLanguageOption(dialogContext, const Locale('ja'), 'Japanese', currentLocale),
-                _buildLanguageOption(dialogContext, const Locale('es'), 'Spanish', currentLocale),
-                _buildLanguageOption(dialogContext, const Locale('zh'), 'Chinese', currentLocale),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildLanguageOption(dialogContext, null, currentLocale),
+                  ...LocaleNotifier.availableLocales.map(
+                    (locale) => _buildLanguageOption(dialogContext, locale, currentLocale),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -562,15 +551,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildLanguageOption(BuildContext dialogContext, Locale? locale, String name, Locale? currentLocale) {
-    final isSelected = locale == currentLocale;
+  Widget _buildLanguageOption(BuildContext dialogContext, Locale? locale, Locale? currentLocale) {
+    final isSelected = locale?.languageCode == currentLocale?.languageCode;
+    final name = LocaleNotifier.getDisplayName(locale);
 
     return ListTile(
       title: Text(name),
-      trailing: isSelected ? const Icon(Icons.check, color: Colors.green) : null,
-      onTap: () {
-        ref.read(localeProvider.notifier).state = locale;
-        Navigator.pop(dialogContext);
+      trailing: isSelected ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary) : null,
+      onTap: () async {
+        await ref.read(localeProvider.notifier).setLocale(locale);
+        if (dialogContext.mounted) {
+          Navigator.pop(dialogContext);
+        }
       },
     );
   }
