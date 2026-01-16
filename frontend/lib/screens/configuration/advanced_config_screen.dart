@@ -34,6 +34,7 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   final TextEditingController _parallelRequestsController = TextEditingController();
   final TextEditingController _parallelAttemptsController = TextEditingController();
   final TextEditingController _systemPromptController = TextEditingController();
+  final TextEditingController _reportPrefixController = TextEditingController();
 
   @override
   void dispose() {
@@ -41,6 +42,7 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     _parallelRequestsController.dispose();
     _parallelAttemptsController.dispose();
     _systemPromptController.dispose();
+    _reportPrefixController.dispose();
     super.dispose();
   }
 
@@ -56,7 +58,8 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
         _verbose != 0 ||
         _skipUnknown != false ||
         _buffsIncludeOriginalPrompt != false ||
-        _systemPromptController.text.isNotEmpty;
+        _systemPromptController.text.isNotEmpty ||
+        _reportPrefixController.text.isNotEmpty;
   }
 
   /// Handle back navigation with unsaved changes check
@@ -100,6 +103,11 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     // Apply system prompt
     if (_systemPromptController.text.isNotEmpty) {
       ref.read(scanConfigProvider.notifier).setSystemPrompt(_systemPromptController.text);
+    }
+
+    // Apply report prefix
+    if (_reportPrefixController.text.isNotEmpty) {
+      ref.read(scanConfigProvider.notifier).setReportPrefix(_reportPrefixController.text);
     }
 
     // Apply extended detectors
@@ -146,7 +154,9 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
       parallelAttempts: _parallelAttempts ?? config.parallelAttempts,
       generatorOptions: config.generatorOptions,
       probeOptions: config.probeOptions,
-      reportPrefix: config.reportPrefix,
+      reportPrefix: _reportPrefixController.text.isNotEmpty
+          ? _reportPrefixController.text
+          : config.reportPrefix,
       probeTags: config.probeTags,
       systemPrompt: _systemPromptController.text.isNotEmpty
           ? _systemPromptController.text
@@ -563,16 +573,33 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
             // System Prompt
             TextField(
               controller: _systemPromptController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'System Prompt',
                 hintText: 'e.g., You are a helpful assistant...',
                 helperText: 'Custom system prompt to use when testing the model (optional)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.psychology),
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.psychology),
                 alignLabelWithHint: true,
+                counterText: '${_systemPromptController.text.length} characters',
               ),
               maxLines: 3,
               minLines: 2,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+
+            // Report Prefix
+            TextField(
+              controller: _reportPrefixController,
+              decoration: InputDecoration(
+                labelText: 'Report Prefix',
+                hintText: 'e.g., my-scan-2024',
+                helperText: 'Custom prefix for report filenames (optional)',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.description),
+                counterText: '${_reportPrefixController.text.length} characters',
+              ),
+              onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 16),
 
