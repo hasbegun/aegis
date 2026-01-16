@@ -44,6 +44,29 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     super.dispose();
   }
 
+  /// Check if any changes have been made from default state
+  bool get _hasUnsavedChanges {
+    return _selectedBuffs.isNotEmpty ||
+        _selectedDetectors.isNotEmpty ||
+        _parallelRequests != null ||
+        _parallelAttempts != null ||
+        _seed != null ||
+        _extendedDetectors != false ||
+        _deprefix != false ||
+        _verbose != 0 ||
+        _skipUnknown != false ||
+        _buffsIncludeOriginalPrompt != false ||
+        _systemPromptController.text.isNotEmpty;
+  }
+
+  /// Handle back navigation with unsaved changes check
+  Future<bool> _onWillPop() async {
+    if (_hasUnsavedChanges) {
+      return await context.confirmDiscardChanges();
+    }
+    return true;
+  }
+
   void _startScan() {
     // Update scan config with advanced options
     final config = ref.read(scanConfigProvider);
@@ -152,18 +175,27 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.advancedConfiguration),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.file_download),
-            onPressed: _exportConfig,
-            tooltip: 'Export Configuration',
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(l10n.advancedConfiguration),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.file_download),
+              onPressed: _exportConfig,
+              tooltip: 'Export Configuration',
+            ),
+          ],
+        ),
+        body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,7 +233,12 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () async {
+                      final shouldPop = await _onWillPop();
+                      if (shouldPop && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Back'),
                   ),
@@ -219,6 +256,7 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 

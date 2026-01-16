@@ -372,4 +372,17 @@ extension UIHelpersExtension on BuildContext {
       isDangerous: isDangerous,
     );
   }
+
+  /// Show unsaved changes confirmation dialog
+  /// Returns true if user wants to discard changes, false to stay
+  Future<bool> confirmDiscardChanges() {
+    return UIHelpers.showConfirmationDialog(
+      this,
+      title: 'Unsaved Changes',
+      message: 'You have unsaved changes. Are you sure you want to leave? Your changes will be lost.',
+      confirmText: 'Discard',
+      cancelText: 'Stay',
+      isDangerous: true,
+    );
+  }
 }

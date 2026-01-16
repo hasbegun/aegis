@@ -29,6 +29,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   int _receiveTimeout = AppConstants.receiveTimeout;
   int _wsReconnectDelay = AppConstants.wsReconnectDelay;
 
+  // Initial values for change detection
+  bool _initialDarkMode = false;
+  int _initialGenerations = AppConstants.defaultGenerations;
+  double _initialThreshold = AppConstants.defaultEvalThreshold;
+  String _initialApiUrl = AppConstants.apiBaseUrl;
+  int _initialConnectionTimeout = AppConstants.connectionTimeout;
+  int _initialReceiveTimeout = AppConstants.receiveTimeout;
+  int _initialWsReconnectDelay = AppConstants.wsReconnectDelay;
+  String _initialOllamaEndpoint = AppConstants.defaultOllamaEndpoint;
+  bool _settingsLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +69,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _receiveTimeout = prefs.getInt(AppConstants.keyReceiveTimeout) ?? AppConstants.receiveTimeout;
       _wsReconnectDelay = prefs.getInt(AppConstants.keyWsReconnectDelay) ?? AppConstants.wsReconnectDelay;
       _ollamaEndpointController.text = prefs.getString(AppConstants.keyOllamaEndpoint) ?? AppConstants.defaultOllamaEndpoint;
+
+      // Store initial values for change detection
+      _initialDarkMode = _isDarkMode;
+      _initialGenerations = _defaultGenerations;
+      _initialThreshold = _defaultThreshold;
+      _initialApiUrl = _apiUrlController.text;
+      _initialConnectionTimeout = _connectionTimeout;
+      _initialReceiveTimeout = _receiveTimeout;
+      _initialWsReconnectDelay = _wsReconnectDelay;
+      _initialOllamaEndpoint = _ollamaEndpointController.text;
+      _settingsLoaded = true;
     });
   }
 
@@ -80,7 +102,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (mounted) {
       context.showSuccess(l10n.settingsSaved);
+      // Update initial values after save
+      _initialDarkMode = _isDarkMode;
+      _initialGenerations = _defaultGenerations;
+      _initialThreshold = _defaultThreshold;
+      _initialApiUrl = _apiUrlController.text;
+      _initialConnectionTimeout = _connectionTimeout;
+      _initialReceiveTimeout = _receiveTimeout;
+      _initialWsReconnectDelay = _wsReconnectDelay;
+      _initialOllamaEndpoint = _ollamaEndpointController.text;
     }
+  }
+
+  /// Check if any settings have changed from their saved values
+  bool get _hasUnsavedChanges {
+    if (!_settingsLoaded) return false;
+    return _isDarkMode != _initialDarkMode ||
+        _defaultGenerations != _initialGenerations ||
+        _defaultThreshold != _initialThreshold ||
+        _apiUrlController.text != _initialApiUrl ||
+        _connectionTimeout != _initialConnectionTimeout ||
+        _receiveTimeout != _initialReceiveTimeout ||
+        _wsReconnectDelay != _initialWsReconnectDelay ||
+        _ollamaEndpointController.text != _initialOllamaEndpoint;
+  }
+
+  /// Handle back navigation with unsaved changes check
+  Future<bool> _onWillPop() async {
+    if (_hasUnsavedChanges) {
+      return await context.confirmDiscardChanges();
+    }
+    return true;
   }
 
   Future<void> _resetToDefaults() async {
@@ -138,13 +190,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.settings),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _saveSettings,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(l10n.settings),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: _saveSettings,
             tooltip: l10n.saveSettings,
           ),
         ],
@@ -517,6 +578,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
