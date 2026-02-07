@@ -27,6 +27,8 @@
   "manageSavedProbes": "管理已保存的探针",
   "history": "历史",
   "pastScans": "过去的扫描",
+  "recentScans": "最近扫描",
+  "viewAll": "查看全部",
 
   "llmVulnerabilityScanner": "LLM漏洞扫描器",
   "scanDescription": "扫描您的语言模型以查找漏洞，包括越狱、提示注入、毒性等。",

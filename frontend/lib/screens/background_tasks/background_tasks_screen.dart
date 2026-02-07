@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/background_scans_provider.dart';
 import '../../services/background_scan_service.dart';
+import '../../widgets/empty_state_widget.dart';
 
 /// Screen for managing and tracking background scans
 class BackgroundTasksScreen extends ConsumerStatefulWidget {
@@ -231,52 +232,40 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
   }
 
   Widget _buildEmptyState() {
-    final theme = Theme.of(context);
-    String message;
-    IconData icon;
+    if (_searchQuery.isNotEmpty) {
+      return const EmptyStateWidget(
+        type: EmptyStateType.searchNoResults,
+        title: 'No Matches Found',
+        message: 'No scans match your search',
+      );
+    }
 
     switch (_tabController.index) {
       case 0:
-        message = 'No active scans';
-        icon = Icons.check_circle_outline;
-        break;
+        return const EmptyStateWidget(
+          type: EmptyStateType.noActiveTasks,
+          title: 'All Clear',
+          message: 'No active scans running',
+        );
       case 1:
-        message = 'No completed scans';
-        icon = Icons.history;
-        break;
+        return const EmptyStateWidget(
+          type: EmptyStateType.noCompletedTasks,
+          title: 'No Completed Scans',
+          message: 'Completed background scans will appear here',
+        );
       case 2:
-        message = 'No failed scans';
-        icon = Icons.error_outline;
-        break;
+        return const EmptyStateWidget(
+          type: EmptyStateType.noFailedTasks,
+          title: 'No Failed Scans',
+          message: 'Great! No scans have failed',
+        );
       default:
-        message = 'No scans found';
-        icon = Icons.search_off;
+        return const EmptyStateWidget(
+          type: EmptyStateType.searchNoResults,
+          title: 'No Scans Found',
+          message: 'No scans to display',
+        );
     }
-
-    if (_searchQuery.isNotEmpty) {
-      message = 'No scans match your search';
-      icon = Icons.search_off;
-    }
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 64,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   Widget _buildEnhancedScanCard(BackgroundScan scan) {
@@ -387,22 +376,58 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
             ),
             const SizedBox(height: 8),
 
-            // Progress details
-            if (scan.progress != null)
+            // Progress details with ETA
+            if (scan.progress != null || scan.status?.estimatedRemaining != null)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '${scan.progress!.toStringAsFixed(1)}% complete',
+                    scan.progress != null
+                        ? '${scan.progress!.toStringAsFixed(1)}% complete'
+                        : 'Starting...',
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  // TODO: Add test counts when available from backend
-                  // Text(
-                  //   'Tests: ${scan.testsCompleted}/${scan.totalTests}',
-                  //   style: theme.textTheme.bodySmall,
-                  // ),
+                  // Show ETA and elapsed time
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // ETA
+                      if (scan.status?.estimatedRemaining != null && scan.isActive) ...[
+                        Icon(
+                          Icons.hourglass_bottom,
+                          size: 14,
+                          color: theme.colorScheme.secondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'ETA: ${scan.status!.estimatedRemaining}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.secondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                      // Elapsed time from garak output
+                      if (scan.status?.elapsedTime != null && scan.isActive) ...[
+                        if (scan.status?.estimatedRemaining != null)
+                          const SizedBox(width: 12),
+                        Icon(
+                          Icons.timer_outlined,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          scan.status!.elapsedTime!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
 
@@ -662,6 +687,12 @@ class _BackgroundTasksScreenState extends ConsumerState<BackgroundTasksScreen>
               _buildDetailRow('Status', _getStatusText(scan)),
               if (scan.progress != null)
                 _buildDetailRow('Progress', '${scan.progress!.toStringAsFixed(1)}%'),
+              if (scan.status?.elapsedTime != null)
+                _buildDetailRow('Elapsed Time', scan.status!.elapsedTime!),
+              if (scan.status?.estimatedRemaining != null)
+                _buildDetailRow('Estimated Remaining', scan.status!.estimatedRemaining!),
+              if (scan.status?.currentProbe != null)
+                _buildDetailRow('Current Probe', scan.status!.currentProbe!),
             ],
           ),
         ),

@@ -2,13 +2,31 @@
 Model listing endpoints for all generator types
 """
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from typing import List, Dict, Optional
 import logging
+import httpx
+import asyncio
+
 from services.model_discovery import get_ollama_discovery
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class ApiKeyValidationRequest(BaseModel):
+    """Request model for API key validation"""
+    provider: str
+    api_key: str
+
+
+class ApiKeyValidationResponse(BaseModel):
+    """Response model for API key validation"""
+    valid: bool
+    provider: str
+    message: str
+    details: Optional[Dict] = None
 
 
 # Comprehensive model lists for each generator type
@@ -675,3 +693,240 @@ async def list_recommended_models():
         }
 
     return recommended
+
+
+@router.post("/validate-api-key", response_model=ApiKeyValidationResponse)
+async def validate_api_key(request: ApiKeyValidationRequest):
+    """
+    Validate an API key for a specific provider.
+
+    Makes a minimal API call to verify the key is valid without incurring
+    significant costs.
+
+    Args:
+        request: Provider name and API key to validate
+
+    Returns:
+        Validation result with status and message
+    """
+    provider = request.provider.lower().replace("generator", "")
+    api_key = request.api_key.strip()
+
+    if not api_key:
+        return ApiKeyValidationResponse(
+            valid=False,
+            provider=provider,
+            message="API key is empty"
+        )
+
+    # Provider-specific validation
+    validators = {
+        "openai": _validate_openai_key,
+        "anthropic": _validate_anthropic_key,
+        "cohere": _validate_cohere_key,
+        "replicate": _validate_replicate_key,
+        "groq": _validate_groq_key,
+        "mistral": _validate_mistral_key,
+        "huggingface": _validate_huggingface_key,
+    }
+
+    validator = validators.get(provider)
+    if not validator:
+        # For unsupported providers, just do basic format check
+        return ApiKeyValidationResponse(
+            valid=True,
+            provider=provider,
+            message=f"API key format accepted (validation not available for {provider})"
+        )
+
+    try:
+        result = await validator(api_key)
+        return ApiKeyValidationResponse(
+            valid=result["valid"],
+            provider=provider,
+            message=result["message"],
+            details=result.get("details")
+        )
+    except Exception as e:
+        logger.error(f"Error validating {provider} API key: {e}")
+        return ApiKeyValidationResponse(
+            valid=False,
+            provider=provider,
+            message=f"Validation error: {str(e)}"
+        )
+
+
+async def _validate_openai_key(api_key: str) -> Dict:
+    """Validate OpenAI API key by listing models"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            if response.status_code == 200:
+                return {"valid": True, "message": "OpenAI API key is valid"}
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid OpenAI API key"}
+            elif response.status_code == 429:
+                return {"valid": True, "message": "OpenAI API key is valid (rate limited)"}
+            else:
+                return {"valid": False, "message": f"OpenAI API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "OpenAI API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}
+
+
+async def _validate_anthropic_key(api_key: str) -> Dict:
+    """Validate Anthropic API key with a minimal request"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            # Use the messages endpoint with minimal content to validate
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "Hi"}]
+                }
+            )
+            if response.status_code == 200:
+                return {"valid": True, "message": "Anthropic API key is valid"}
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid Anthropic API key"}
+            elif response.status_code == 429:
+                return {"valid": True, "message": "Anthropic API key is valid (rate limited)"}
+            elif response.status_code == 400:
+                # Bad request but key is valid
+                error_data = response.json()
+                if "authentication" in str(error_data).lower():
+                    return {"valid": False, "message": "Invalid Anthropic API key"}
+                return {"valid": True, "message": "Anthropic API key is valid"}
+            else:
+                return {"valid": False, "message": f"Anthropic API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "Anthropic API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}
+
+
+async def _validate_cohere_key(api_key: str) -> Dict:
+    """Validate Cohere API key"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://api.cohere.ai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            if response.status_code == 200:
+                return {"valid": True, "message": "Cohere API key is valid"}
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid Cohere API key"}
+            elif response.status_code == 429:
+                return {"valid": True, "message": "Cohere API key is valid (rate limited)"}
+            else:
+                return {"valid": False, "message": f"Cohere API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "Cohere API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}
+
+
+async def _validate_replicate_key(api_key: str) -> Dict:
+    """Validate Replicate API key"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://api.replicate.com/v1/account",
+                headers={"Authorization": f"Token {api_key}"}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "valid": True,
+                    "message": "Replicate API key is valid",
+                    "details": {"username": data.get("username")}
+                }
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid Replicate API key"}
+            else:
+                return {"valid": False, "message": f"Replicate API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "Replicate API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}
+
+
+async def _validate_groq_key(api_key: str) -> Dict:
+    """Validate Groq API key"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            if response.status_code == 200:
+                return {"valid": True, "message": "Groq API key is valid"}
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid Groq API key"}
+            elif response.status_code == 429:
+                return {"valid": True, "message": "Groq API key is valid (rate limited)"}
+            else:
+                return {"valid": False, "message": f"Groq API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "Groq API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}
+
+
+async def _validate_mistral_key(api_key: str) -> Dict:
+    """Validate Mistral API key"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://api.mistral.ai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            if response.status_code == 200:
+                return {"valid": True, "message": "Mistral API key is valid"}
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid Mistral API key"}
+            elif response.status_code == 429:
+                return {"valid": True, "message": "Mistral API key is valid (rate limited)"}
+            else:
+                return {"valid": False, "message": f"Mistral API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "Mistral API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}
+
+
+async def _validate_huggingface_key(api_key: str) -> Dict:
+    """Validate Hugging Face API key"""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                "https://huggingface.co/api/whoami-v2",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return {
+                    "valid": True,
+                    "message": "Hugging Face API key is valid",
+                    "details": {"username": data.get("name")}
+                }
+            elif response.status_code == 401:
+                return {"valid": False, "message": "Invalid Hugging Face API key"}
+            else:
+                return {"valid": False, "message": f"Hugging Face API error: {response.status_code}"}
+        except httpx.TimeoutException:
+            return {"valid": False, "message": "Hugging Face API request timed out"}
+        except Exception as e:
+            return {"valid": False, "message": f"Connection error: {str(e)}"}

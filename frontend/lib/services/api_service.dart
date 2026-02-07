@@ -5,6 +5,7 @@ import '../models/scan_config.dart';
 import '../models/scan_status.dart';
 import '../models/plugin.dart';
 import '../models/system_info.dart';
+import '../models/pagination.dart';
 
 /// Service for communicating with the garak backend API
 class ApiService {
@@ -94,7 +95,7 @@ class ApiService {
     }
   }
 
-  /// Get scan history
+  /// Get scan history (legacy - returns all scans)
   Future<List<Map<String, dynamic>>> getScanHistory() async {
     try {
       final response = await _dio.get('/scan/history');
@@ -102,6 +103,43 @@ class ApiService {
       return scans.cast<Map<String, dynamic>>();
     } on DioException catch (e) {
       _logger.e('Error getting scan history: ${e.message}');
+      throw ApiException.fromDioException(e);
+    }
+  }
+
+  /// Get paginated scan history
+  Future<ScanHistoryResponse> getScanHistoryPaginated({
+    int page = 1,
+    int pageSize = 20,
+    ScanSortField sortBy = ScanSortField.startedAt,
+    SortOrder sortOrder = SortOrder.desc,
+    String? status,
+    String? search,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': page,
+        'page_size': pageSize,
+        'sort_by': sortBy.value,
+        'sort_order': sortOrder.value,
+      };
+
+      if (status != null && status.isNotEmpty) {
+        queryParams['status'] = status;
+      }
+
+      if (search != null && search.isNotEmpty) {
+        queryParams['search'] = search;
+      }
+
+      final response = await _dio.get(
+        '/scan/history',
+        queryParameters: queryParams,
+      );
+
+      return ScanHistoryResponse.fromJson(response.data);
+    } on DioException catch (e) {
+      _logger.e('Error getting paginated scan history: ${e.message}');
       throw ApiException.fromDioException(e);
     }
   }
@@ -184,6 +222,28 @@ class ApiService {
     } on DioException catch (e) {
       _logger.e('Error listing buffs: ${e.message}');
       throw ApiException.fromDioException(e);
+    }
+  }
+
+  /// Validate an API key for a specific provider
+  Future<ApiKeyValidationResult> validateApiKey(String provider, String apiKey) async {
+    try {
+      final response = await _dio.post(
+        '/models/validate-api-key',
+        data: {
+          'provider': provider,
+          'api_key': apiKey,
+        },
+      );
+      return ApiKeyValidationResult.fromJson(response.data);
+    } on DioException catch (e) {
+      _logger.e('Error validating API key: ${e.message}');
+      // Return invalid result instead of throwing
+      return ApiKeyValidationResult(
+        valid: false,
+        provider: provider,
+        message: 'Validation failed: ${e.message}',
+      );
     }
   }
 
@@ -305,4 +365,28 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Result of API key validation
+class ApiKeyValidationResult {
+  final bool valid;
+  final String provider;
+  final String message;
+  final Map<String, dynamic>? details;
+
+  ApiKeyValidationResult({
+    required this.valid,
+    required this.provider,
+    required this.message,
+    this.details,
+  });
+
+  factory ApiKeyValidationResult.fromJson(Map<String, dynamic> json) {
+    return ApiKeyValidationResult(
+      valid: json['valid'] as bool,
+      provider: json['provider'] as String,
+      message: json['message'] as String,
+      details: json['details'] as Map<String, dynamic>?,
+    );
+  }
 }

@@ -248,6 +248,18 @@ abstract class AppLocalizations {
   /// **'Past scans'**
   String get pastScans;
 
+  /// No description provided for @recentScans.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Scans'**
+  String get recentScans;
+
+  /// No description provided for @viewAll.
+  ///
+  /// In en, this message translates to:
+  /// **'View All'**
+  String get viewAll;
+
   /// No description provided for @llmVulnerabilityScanner.
   ///
   /// In en, this message translates to:

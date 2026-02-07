@@ -1,18 +1,25 @@
 """
 Scan management endpoints
 """
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 from models.schemas import (
     ScanConfigRequest,
     ScanResponse,
     ScanStatusResponse,
     ScanStatus,
-    ScanResult
+    ScanResult,
+    ScanHistoryResponse,
+    ScanHistoryItem,
+    PaginationMeta,
+    ScanSortField,
+    SortOrder,
 )
 from services.garak_wrapper import garak_wrapper
 from datetime import datetime
+from typing import Optional
 import asyncio
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -126,19 +133,109 @@ async def delete_scan(scan_id: str):
     return {"message": f"Scan {scan_id} deleted successfully"}
 
 
-@router.get("/history")
-async def get_scan_history():
+@router.get("/history", response_model=ScanHistoryResponse)
+async def get_scan_history(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page (max 100)"),
+    sort_by: ScanSortField = Query(ScanSortField.STARTED_AT, description="Field to sort by"),
+    sort_order: SortOrder = Query(SortOrder.DESC, description="Sort order"),
+    status: Optional[str] = Query(None, description="Filter by status (completed, running, failed, cancelled)"),
+    search: Optional[str] = Query(None, description="Search by target name or scan ID"),
+):
     """
-    Get list of all scans (active and completed)
+    Get paginated list of all scans (active and completed)
+
+    Args:
+        page: Page number (1-indexed)
+        page_size: Number of items per page (max 100)
+        sort_by: Field to sort by
+        sort_order: Sort order (asc or desc)
+        status: Optional status filter
+        search: Optional search query for target name or scan ID
 
     Returns:
-        List of scan information
+        Paginated list of scan information
     """
-    scans = garak_wrapper.get_all_scans()
-    return {
-        "scans": scans,
-        "total_count": len(scans)
-    }
+    # Get all scans
+    all_scans = garak_wrapper.get_all_scans()
+
+    # Apply status filter
+    if status:
+        status_lower = status.lower()
+        all_scans = [s for s in all_scans if s.get('status', '').lower() == status_lower]
+
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        all_scans = [
+            s for s in all_scans
+            if search_lower in s.get('target_name', '').lower()
+            or search_lower in s.get('scan_id', '').lower()
+            or search_lower in s.get('target_type', '').lower()
+        ]
+
+    # Sort scans
+    def get_sort_key(scan):
+        if sort_by == ScanSortField.STARTED_AT:
+            return scan.get('started_at', '') or ''
+        elif sort_by == ScanSortField.COMPLETED_AT:
+            return scan.get('completed_at', '') or ''
+        elif sort_by == ScanSortField.STATUS:
+            return scan.get('status', '') or ''
+        elif sort_by == ScanSortField.TARGET_NAME:
+            return scan.get('target_name', '') or ''
+        elif sort_by == ScanSortField.PASS_RATE:
+            passed = scan.get('passed', 0)
+            failed = scan.get('failed', 0)
+            total = passed + failed
+            return (passed / total * 100) if total > 0 else 0
+        return ''
+
+    reverse_sort = sort_order == SortOrder.DESC
+    all_scans.sort(key=get_sort_key, reverse=reverse_sort)
+
+    # Calculate pagination
+    total_items = len(all_scans)
+    total_pages = math.ceil(total_items / page_size) if total_items > 0 else 1
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+
+    # Get page slice
+    page_scans = all_scans[start_idx:end_idx]
+
+    # Convert to response model
+    scan_items = [
+        ScanHistoryItem(
+            scan_id=s.get('scan_id', ''),
+            status=s.get('status', 'unknown'),
+            target_type=s.get('target_type'),
+            target_name=s.get('target_name'),
+            started_at=s.get('started_at'),
+            completed_at=s.get('completed_at'),
+            passed=s.get('passed', 0),
+            failed=s.get('failed', 0),
+            total_tests=s.get('passed', 0) + s.get('failed', 0),
+            progress=s.get('progress', 0.0),
+            html_report_path=s.get('html_report_path'),
+            jsonl_report_path=s.get('jsonl_report_path'),
+        )
+        for s in page_scans
+    ]
+
+    pagination = PaginationMeta(
+        page=page,
+        page_size=page_size,
+        total_items=total_items,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_previous=page > 1,
+    )
+
+    return ScanHistoryResponse(
+        scans=scan_items,
+        pagination=pagination,
+        total_count=total_items,
+    )
 
 
 @router.get("/{scan_id}/results", response_model=ScanResult)

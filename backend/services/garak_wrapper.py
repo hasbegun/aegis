@@ -266,6 +266,30 @@ class GarakWrapper:
         if config.buffs_include_original_prompt:
             cmd.append('--buffs_include_original_prompt')
 
+        # Output directory
+        if config.output_dir:
+            cmd.extend(['--output_dir', config.output_dir])
+
+        # No report (skip report generation)
+        if config.no_report:
+            cmd.append('--no_report')
+
+        # Continue on error (skip failed probes)
+        if config.continue_on_error:
+            cmd.append('--continue_on_error')
+
+        # Exclude probes
+        if config.exclude_probes:
+            cmd.extend(['--exclude_probes', config.exclude_probes])
+
+        # Exclude detectors
+        if config.exclude_detectors:
+            cmd.extend(['--exclude_detectors', config.exclude_detectors])
+
+        # Timeout per probe
+        if config.timeout_per_probe is not None:
+            cmd.extend(['--timeout_per_probe', str(config.timeout_per_probe)])
+
         # Detectors - strip 'detectors.' prefix if present
         if config.detectors:
             detectors_cleaned = [d.replace('detectors.', '', 1) if d.startswith('detectors.') else d for d in config.detectors]

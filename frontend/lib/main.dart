@@ -7,6 +7,7 @@ import 'config/constants.dart';
 import 'providers/theme_provider.dart';
 import 'providers/locale_provider.dart';
 import 'providers/background_scans_provider.dart';
+import 'widgets/offline_banner.dart';
 
 // Global provider container for accessing providers in main()
 final globalContainer = ProviderContainer();
@@ -117,7 +118,9 @@ class InnoxSecurityApp extends ConsumerWidget {
         ),
       ),
       themeMode: themeMode,
-      home: const HomeScreen(),
+      home: const ConnectivitySnackbarListener(
+        child: HomeScreen(),
+      ),
     );
   }
 }

@@ -152,6 +152,25 @@ Once the backend is running, visit:
 4. **View Results**: Analyze detailed HTML reports
 5. **History**: Access past scans anytime
 
+## Keyboard Shortcuts
+
+Aegis supports keyboard shortcuts for common actions. On macOS, use `⌘` (Command); on Windows/Linux, use `Ctrl`.
+
+| Shortcut | Action | Available On |
+|----------|--------|--------------|
+| `⌘/Ctrl + N` | New Scan | Home Screen |
+| `⌘/Ctrl + ,` | Open Settings | Home Screen |
+| `⌘/Ctrl + H` | Open Scan History | Home Screen |
+| `⌘/Ctrl + S` | Save Settings | Settings Screen |
+| `⌘/Ctrl + Enter` | Start Scan | Advanced Config Screen |
+| `⌘/Ctrl + E` | Export Configuration | Advanced Config Screen |
+| `⌘/Ctrl + F` | Search | Screens with search |
+| `Escape` | Go Back / Cancel | All Screens |
+
+### Shortcut Hints
+
+Keyboard shortcuts are displayed in tooltips throughout the UI. Hover over buttons and action cards to see available shortcuts.
+
 ## Supported LLM Providers
 
 - OpenAI (GPT-3.5, GPT-4, etc.)

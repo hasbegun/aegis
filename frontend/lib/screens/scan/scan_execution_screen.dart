@@ -468,6 +468,11 @@ class _ScanExecutionScreenState extends ConsumerState<ScanExecutionScreen> {
                 ),
               ),
             ],
+            // Show time info (elapsed and ETA)
+            if (status.elapsedTime != null || status.estimatedRemaining != null) ...[
+              const SizedBox(height: 12),
+              _buildTimeInfoRow(theme, status),
+            ],
             // Show iteration info if available
             if (status.totalIterations > 0) ...[
               const SizedBox(height: 8),
@@ -486,26 +491,99 @@ class _ScanExecutionScreenState extends ConsumerState<ScanExecutionScreen> {
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  if (status.estimatedRemaining != null) ...[
-                    const SizedBox(width: 16),
-                    Icon(
-                      Icons.timer_outlined,
-                      size: 16,
-                      color: theme.colorScheme.secondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'ETA: ${status.estimatedRemaining}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.secondary,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTimeInfoRow(ThemeData theme, ScanStatusInfo status) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          // Elapsed Time
+          if (status.elapsedTime != null) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.timer_outlined,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Elapsed',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      status.elapsedTime!,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+          // Divider between elapsed and ETA
+          if (status.elapsedTime != null && status.estimatedRemaining != null)
+            Container(
+              height: 30,
+              width: 1,
+              color: theme.colorScheme.outlineVariant,
+            ),
+          // Estimated Remaining (ETA)
+          if (status.estimatedRemaining != null) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.hourglass_bottom,
+                  size: 18,
+                  color: theme.colorScheme.secondary,
+                ),
+                const SizedBox(width: 6),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Remaining',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      status.estimatedRemaining!,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -912,11 +990,40 @@ class _ScanExecutionScreenState extends ConsumerState<ScanExecutionScreen> {
                         : 'Starting...',
                     style: theme.textTheme.bodySmall,
                   ),
-                  Text(
-                    _formatElapsedTime(scan.startTime),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Show ETA if available
+                      if (scan.status?.estimatedRemaining != null) ...[
+                        Icon(
+                          Icons.hourglass_bottom,
+                          size: 12,
+                          color: theme.colorScheme.secondary,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          scan.status!.estimatedRemaining!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.secondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      // Show elapsed time
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        scan.status?.elapsedTime ?? _formatElapsedTime(scan.startTime),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

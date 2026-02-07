@@ -5,6 +5,7 @@ import 'package:aegis/l10n/app_localizations.dart';
 import '../../config/constants.dart';
 import '../../providers/scan_config_provider.dart';
 import '../../providers/models_provider.dart';
+import '../../providers/api_provider.dart';
 import '../../models/generator_model.dart';
 import '../../utils/ui_helpers.dart';
 import '../configuration/probe_selection_screen.dart';
@@ -28,6 +29,11 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
   final TextEditingController _modelNameController = TextEditingController();
   final TextEditingController _apiKeyController = TextEditingController();
   String? _selectedModelId; // Track the actual model ID for backend
+
+  // API key validation state
+  bool _isValidatingApiKey = false;
+  bool? _apiKeyValid;
+  String? _apiKeyValidationMessage;
 
   @override
   void initState() {
@@ -98,6 +104,42 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
       context,
       UIHelpers.slideRoute(const ProbeSelectionScreen()),
     );
+  }
+
+  Future<void> _validateApiKey() async {
+    if (_selectedGeneratorType == null || _apiKeyController.text.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isValidatingApiKey = true;
+      _apiKeyValid = null;
+      _apiKeyValidationMessage = null;
+    });
+
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final result = await apiService.validateApiKey(
+        _selectedGeneratorType!,
+        _apiKeyController.text,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isValidatingApiKey = false;
+          _apiKeyValid = result.valid;
+          _apiKeyValidationMessage = result.message;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isValidatingApiKey = false;
+          _apiKeyValid = false;
+          _apiKeyValidationMessage = 'Validation error: $e';
+        });
+      }
+    }
   }
 
   @override
@@ -366,18 +408,72 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                         TextField(
                           controller: _apiKeyController,
                           obscureText: true,
+                          onChanged: (_) {
+                            // Reset validation state when key changes
+                            if (_apiKeyValid != null) {
+                              setState(() {
+                                _apiKeyValid = null;
+                                _apiKeyValidationMessage = null;
+                              });
+                            }
+                          },
                           decoration: InputDecoration(
                             hintText: 'sk-...',
                             border: const OutlineInputBorder(),
                             prefixIcon: const Icon(Icons.key),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.info_outline),
-                              onPressed: () {
-                                _showApiKeyInfo(context);
-                              },
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Validation status indicator
+                                if (_isValidatingApiKey)
+                                  const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  )
+                                else if (_apiKeyValid == true)
+                                  const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: Icon(Icons.check_circle, color: Colors.green),
+                                  )
+                                else if (_apiKeyValid == false)
+                                  const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: Icon(Icons.error, color: Colors.red),
+                                  ),
+                                // Validate button
+                                TextButton(
+                                  onPressed: _apiKeyController.text.isEmpty || _isValidatingApiKey
+                                      ? null
+                                      : _validateApiKey,
+                                  child: const Text('Validate'),
+                                ),
+                                // Info button
+                                IconButton(
+                                  icon: const Icon(Icons.info_outline),
+                                  onPressed: () {
+                                    _showApiKeyInfo(context);
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         ),
+                        // Validation message
+                        if (_apiKeyValidationMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              _apiKeyValidationMessage!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _apiKeyValid == true ? Colors.green : Colors.red,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),

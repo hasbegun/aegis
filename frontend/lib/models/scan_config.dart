@@ -71,6 +71,30 @@ class ScanConfig {
   @JsonKey(name: 'buffs_include_original_prompt')
   final bool buffsIncludeOriginalPrompt;
 
+  // Output directory
+  @JsonKey(name: 'output_dir')
+  final String? outputDir;
+
+  // No report
+  @JsonKey(name: 'no_report')
+  final bool noReport;
+
+  // Continue on error
+  @JsonKey(name: 'continue_on_error')
+  final bool continueOnError;
+
+  // Exclude probes
+  @JsonKey(name: 'exclude_probes')
+  final String? excludeProbes;
+
+  // Exclude detectors
+  @JsonKey(name: 'exclude_detectors')
+  final String? excludeDetectors;
+
+  // Timeout per probe
+  @JsonKey(name: 'timeout_per_probe')
+  final int? timeoutPerProbe;
+
   const ScanConfig({
     required this.targetType,
     required this.targetName,
@@ -92,6 +116,12 @@ class ScanConfig {
     this.verbose = 0,
     this.skipUnknown = false,
     this.buffsIncludeOriginalPrompt = false,
+    this.outputDir,
+    this.noReport = false,
+    this.continueOnError = false,
+    this.excludeProbes,
+    this.excludeDetectors,
+    this.timeoutPerProbe,
   });
 
   factory ScanConfig.fromJson(Map<String, dynamic> json) =>
@@ -120,6 +150,12 @@ class ScanConfig {
     int? verbose,
     bool? skipUnknown,
     bool? buffsIncludeOriginalPrompt,
+    String? outputDir,
+    bool? noReport,
+    bool? continueOnError,
+    String? excludeProbes,
+    String? excludeDetectors,
+    int? timeoutPerProbe,
   }) {
     return ScanConfig(
       targetType: targetType ?? this.targetType,
@@ -142,6 +178,12 @@ class ScanConfig {
       verbose: verbose ?? this.verbose,
       skipUnknown: skipUnknown ?? this.skipUnknown,
       buffsIncludeOriginalPrompt: buffsIncludeOriginalPrompt ?? this.buffsIncludeOriginalPrompt,
+      outputDir: outputDir ?? this.outputDir,
+      noReport: noReport ?? this.noReport,
+      continueOnError: continueOnError ?? this.continueOnError,
+      excludeProbes: excludeProbes ?? this.excludeProbes,
+      excludeDetectors: excludeDetectors ?? this.excludeDetectors,
+      timeoutPerProbe: timeoutPerProbe ?? this.timeoutPerProbe,
     );
   }
 }

@@ -81,6 +81,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pastScans => '过去的扫描';
 
   @override
+  String get recentScans => '最近扫描';
+
+  @override
+  String get viewAll => '查看全部';
+
+  @override
   String get llmVulnerabilityScanner => 'LLM漏洞扫描器';
 
   @override

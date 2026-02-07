@@ -5,6 +5,7 @@ import '../../config/constants.dart';
 import '../../models/custom_probe.dart';
 import '../../providers/custom_probe_provider.dart';
 import '../../utils/ui_helpers.dart';
+import '../../widgets/empty_state_widget.dart';
 import 'write_probe_screen.dart';
 
 class ManageProbesScreen extends ConsumerStatefulWidget {
@@ -183,29 +184,17 @@ class _ManageProbesScreenState extends ConsumerState<ManageProbesScreen> {
     }
 
     if (_probes == null || _probes!.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.code_off,
-              size: 64,
-              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No Custom Probes Yet',
-              style: theme.textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Create your first custom probe to get started',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+      return EmptyStateWidget(
+        type: EmptyStateType.noProbes,
+        title: 'No Custom Probes Yet',
+        message: 'Create your first custom probe to get started',
+        action: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const WriteProbeScreen()),
+          ).then((_) => _loadProbes());
+        },
+        actionLabel: l10n.newProbe,
       );
     }
 

@@ -123,6 +123,85 @@ class ExportService {
     }
   }
 
+  /// Export multiple scan results as a combined JSON file
+  Future<String> exportBulkAsJson(List<Map<String, dynamic>> resultsList) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateFormat('yyyy-MM-dd_HH-mm-ss').format(DateTime.now());
+      final filename = 'garak_bulk_export_${resultsList.length}_scans_$timestamp.json';
+      final file = File('${directory.path}/$filename');
+
+      final exportData = {
+        'export_info': {
+          'exported_at': DateTime.now().toIso8601String(),
+          'total_scans': resultsList.length,
+          'exported_by': 'Aegis - Garak UI',
+        },
+        'scans': resultsList,
+      };
+
+      final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
+      await file.writeAsString(jsonString);
+
+      return file.path;
+    } catch (e) {
+      throw Exception('Failed to export bulk JSON: $e');
+    }
+  }
+
+  /// Export multiple scan results as individual JSON files and return paths
+  Future<List<String>> exportBulkAsIndividualJson(List<Map<String, dynamic>> resultsList) async {
+    final paths = <String>[];
+    for (final results in resultsList) {
+      final scanId = results['scan_id'] as String? ?? 'unknown';
+      final path = await exportAsJson(results, scanId);
+      paths.add(path);
+    }
+    return paths;
+  }
+
+  /// Share multiple scan results
+  Future<void> shareBulkResults(List<Map<String, dynamic>> resultsList, String format) async {
+    try {
+      List<XFile> files = [];
+
+      if (format == 'json_combined') {
+        // Single combined JSON file
+        final filePath = await exportBulkAsJson(resultsList);
+        files.add(XFile(filePath));
+      } else {
+        // Individual files
+        for (final results in resultsList) {
+          final scanId = results['scan_id'] as String? ?? 'unknown';
+          String filePath;
+
+          switch (format.toLowerCase()) {
+            case 'json':
+              filePath = await exportAsJson(results, scanId);
+              break;
+            case 'html':
+              filePath = await exportAsHtml(results, scanId);
+              break;
+            case 'pdf':
+              filePath = await exportAsPdf(results, scanId);
+              break;
+            default:
+              throw Exception('Unsupported format: $format');
+          }
+          files.add(XFile(filePath));
+        }
+      }
+
+      await Share.shareXFiles(
+        files,
+        subject: 'Garak Scan Results - ${resultsList.length} scans',
+        text: 'Vulnerability scan results from Garak (${resultsList.length} scans)',
+      );
+    } catch (e) {
+      throw Exception('Failed to share bulk results: $e');
+    }
+  }
+
   /// Generate HTML report content
   String _generateHtmlReport(Map<String, dynamic> results, String scanId) {
     final summary = results['summary'] ?? {};

@@ -27,6 +27,8 @@
   "manageSavedProbes": "Gestionar sondas guardadas",
   "history": "Historial",
   "pastScans": "Escaneos anteriores",
+  "recentScans": "Escaneos Recientes",
+  "viewAll": "Ver Todo",
 
   "llmVulnerabilityScanner": "Escáner de Vulnerabilidades LLM",
   "scanDescription": "Escanea tus modelos de lenguaje en busca de vulnerabilidades incluyendo jailbreaks, inyección de prompts, toxicidad y más.",

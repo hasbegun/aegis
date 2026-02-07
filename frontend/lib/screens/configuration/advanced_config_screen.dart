@@ -7,6 +7,7 @@ import '../../providers/plugins_provider.dart';
 import '../../providers/scan_config_provider.dart';
 import '../../services/export_service.dart';
 import '../../utils/ui_helpers.dart';
+import '../../utils/keyboard_shortcuts.dart';
 import '../scan/scan_execution_screen.dart';
 
 /// Advanced configuration screen for buffs, detectors, and parameters
@@ -30,11 +31,17 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   int _verbose = 0;
   bool _skipUnknown = false;
   bool _buffsIncludeOriginalPrompt = false;
+  bool _noReport = false;
+  bool _continueOnError = false;
+  int? _timeoutPerProbe;
   final TextEditingController _seedController = TextEditingController();
   final TextEditingController _parallelRequestsController = TextEditingController();
   final TextEditingController _parallelAttemptsController = TextEditingController();
   final TextEditingController _systemPromptController = TextEditingController();
   final TextEditingController _reportPrefixController = TextEditingController();
+  final TextEditingController _outputDirController = TextEditingController();
+  final TextEditingController _excludeProbesController = TextEditingController();
+  final TextEditingController _excludeDetectorsController = TextEditingController();
 
   @override
   void dispose() {
@@ -43,6 +50,9 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     _parallelAttemptsController.dispose();
     _systemPromptController.dispose();
     _reportPrefixController.dispose();
+    _outputDirController.dispose();
+    _excludeProbesController.dispose();
+    _excludeDetectorsController.dispose();
     super.dispose();
   }
 
@@ -58,8 +68,14 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
         _verbose != 0 ||
         _skipUnknown != false ||
         _buffsIncludeOriginalPrompt != false ||
+        _noReport != false ||
+        _continueOnError != false ||
+        _timeoutPerProbe != null ||
         _systemPromptController.text.isNotEmpty ||
-        _reportPrefixController.text.isNotEmpty;
+        _reportPrefixController.text.isNotEmpty ||
+        _outputDirController.text.isNotEmpty ||
+        _excludeProbesController.text.isNotEmpty ||
+        _excludeDetectorsController.text.isNotEmpty;
   }
 
   /// Handle back navigation with unsaved changes check
@@ -125,6 +141,32 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     // Apply buffs include original prompt
     ref.read(scanConfigProvider.notifier).setBuffsIncludeOriginalPrompt(_buffsIncludeOriginalPrompt);
 
+    // Apply output directory
+    if (_outputDirController.text.isNotEmpty) {
+      ref.read(scanConfigProvider.notifier).setOutputDir(_outputDirController.text);
+    }
+
+    // Apply no report
+    ref.read(scanConfigProvider.notifier).setNoReport(_noReport);
+
+    // Apply continue on error
+    ref.read(scanConfigProvider.notifier).setContinueOnError(_continueOnError);
+
+    // Apply exclude probes
+    if (_excludeProbesController.text.isNotEmpty) {
+      ref.read(scanConfigProvider.notifier).setExcludeProbes(_excludeProbesController.text);
+    }
+
+    // Apply exclude detectors
+    if (_excludeDetectorsController.text.isNotEmpty) {
+      ref.read(scanConfigProvider.notifier).setExcludeDetectors(_excludeDetectorsController.text);
+    }
+
+    // Apply timeout per probe
+    if (_timeoutPerProbe != null) {
+      ref.read(scanConfigProvider.notifier).setTimeoutPerProbe(_timeoutPerProbe);
+    }
+
     // Navigate to scan execution
     Navigator.push(
       context,
@@ -166,6 +208,18 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
       verbose: _verbose,
       skipUnknown: _skipUnknown,
       buffsIncludeOriginalPrompt: _buffsIncludeOriginalPrompt,
+      outputDir: _outputDirController.text.isNotEmpty
+          ? _outputDirController.text
+          : config.outputDir,
+      noReport: _noReport,
+      continueOnError: _continueOnError,
+      excludeProbes: _excludeProbesController.text.isNotEmpty
+          ? _excludeProbesController.text
+          : config.excludeProbes,
+      excludeDetectors: _excludeDetectorsController.text.isNotEmpty
+          ? _excludeDetectorsController.text
+          : config.excludeDetectors,
+      timeoutPerProbe: _timeoutPerProbe ?? config.timeoutPerProbe,
     );
 
     try {
@@ -185,26 +239,40 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        final shouldPop = await _onWillPop();
-        if (shouldPop && context.mounted) {
-          Navigator.of(context).pop();
-        }
+    return Shortcuts(
+      shortcuts: {
+        KeyboardShortcuts.runShortcut: const ShortcutIntent('start_scan'),
+        KeyboardShortcuts.exportShortcut: const ShortcutIntent('export'),
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(l10n.advancedConfiguration),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.file_download),
-              onPressed: _exportConfig,
-              tooltip: 'Export Configuration',
-            ),
-          ],
-        ),
+      child: Actions(
+        actions: {
+          ShortcutIntent: ShortcutCallbackAction({
+            'start_scan': _startScan,
+            'export': _exportConfig,
+          }),
+        },
+        child: Focus(
+          autofocus: true,
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) async {
+              if (didPop) return;
+              final shouldPop = await _onWillPop();
+              if (shouldPop && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                title: Text(l10n.advancedConfiguration),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.file_download),
+                    onPressed: _exportConfig,
+                    tooltip: KeyboardShortcuts.formatHint('Export', 'E'),
+                  ),
+                ],
+              ),
         body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
         child: Column(
@@ -255,18 +323,24 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _startScan,
-                    icon: const Icon(Icons.rocket_launch),
-                    label: const Text('Start Scan'),
+                  child: Tooltip(
+                    message: '${KeyboardShortcuts.modifierKey}+Enter',
+                    child: FilledButton.icon(
+                      onPressed: _startScan,
+                      icon: const Icon(Icons.rocket_launch),
+                      label: const Text('Start Scan'),
+                    ),
                   ),
                 ),
               ],
             ),
           ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-    ),
     );
   }
 
@@ -603,6 +677,91 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Output Directory
+            TextField(
+              controller: _outputDirController,
+              decoration: const InputDecoration(
+                labelText: 'Output Directory',
+                hintText: 'e.g., /path/to/output',
+                helperText: 'Custom directory for scan output files (optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.folder_open),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+
+            // Exclude Probes
+            TextField(
+              controller: _excludeProbesController,
+              decoration: const InputDecoration(
+                labelText: 'Exclude Probes',
+                hintText: 'e.g., dan,encoding,gcg',
+                helperText: 'Comma-separated probe names to exclude from scan (optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.block),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+
+            // Exclude Detectors
+            TextField(
+              controller: _excludeDetectorsController,
+              decoration: const InputDecoration(
+                labelText: 'Exclude Detectors',
+                hintText: 'e.g., toxicity,always.Pass',
+                helperText: 'Comma-separated detector names to exclude (optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.block_flipped),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+
+            // Timeout Per Probe
+            Row(
+              children: [
+                Icon(Icons.timer, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Probe Timeout',
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const Spacer(),
+                Text(
+                  _timeoutPerProbe == null
+                      ? 'Default'
+                      : '${_timeoutPerProbe}s',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: (_timeoutPerProbe ?? 0).toDouble(),
+              min: 0,
+              max: 600,
+              divisions: 60,
+              label: _timeoutPerProbe == null || _timeoutPerProbe == 0
+                  ? 'Default'
+                  : '${_timeoutPerProbe}s',
+              onChanged: (value) {
+                setState(() {
+                  _timeoutPerProbe = value == 0 ? null : value.toInt();
+                });
+              },
+            ),
+            Text(
+              'Time limit for each probe (0 = use default)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Extended Detectors Toggle
             SwitchListTile(
               title: const Text('Extended Detectors'),
@@ -659,6 +818,26 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
               value: _skipUnknown,
               onChanged: (value) => setState(() => _skipUnknown = value),
               secondary: const Icon(Icons.skip_next),
+              contentPadding: EdgeInsets.zero,
+            ),
+
+            // No Report Toggle
+            SwitchListTile(
+              title: const Text('Skip Report Generation'),
+              subtitle: const Text('Run scan without generating report files'),
+              value: _noReport,
+              onChanged: (value) => setState(() => _noReport = value),
+              secondary: const Icon(Icons.description_outlined),
+              contentPadding: EdgeInsets.zero,
+            ),
+
+            // Continue on Error Toggle
+            SwitchListTile(
+              title: const Text('Continue on Error'),
+              subtitle: const Text('Skip failed probes and continue scanning'),
+              value: _continueOnError,
+              onChanged: (value) => setState(() => _continueOnError = value),
+              secondary: const Icon(Icons.play_arrow),
               contentPadding: EdgeInsets.zero,
             ),
 

@@ -98,6 +98,44 @@ class ScanConfigRequest(BaseModel):
         description="Include original prompt alongside buffed versions"
     )
 
+    # Output directory
+    output_dir: Optional[str] = Field(
+        default=None,
+        description="Custom output directory for scan results"
+    )
+
+    # No report
+    no_report: bool = Field(
+        default=False,
+        description="Skip report generation"
+    )
+
+    # Continue on error
+    continue_on_error: bool = Field(
+        default=False,
+        description="Continue scan even if some probes fail"
+    )
+
+    # Exclude probes
+    exclude_probes: Optional[str] = Field(
+        default=None,
+        description="Comma-separated list of probes to exclude"
+    )
+
+    # Exclude detectors
+    exclude_detectors: Optional[str] = Field(
+        default=None,
+        description="Comma-separated list of detectors to exclude"
+    )
+
+    # Timeout per probe
+    timeout_per_probe: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=3600,
+        description="Timeout in seconds for each probe (1-3600)"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -136,6 +174,54 @@ class ScanStatusResponse(BaseModel):
     elapsed_time: Optional[float] = Field(default=None, description="Elapsed time in seconds")
     estimated_remaining: Optional[float] = Field(default=None, description="Estimated remaining time")
     error_message: Optional[str] = Field(default=None, description="Error message if failed")
+
+
+class ScanSortField(str, Enum):
+    """Fields that can be used for sorting scan history"""
+    STARTED_AT = "started_at"
+    COMPLETED_AT = "completed_at"
+    STATUS = "status"
+    TARGET_NAME = "target_name"
+    PASS_RATE = "pass_rate"
+
+
+class SortOrder(str, Enum):
+    """Sort order"""
+    ASC = "asc"
+    DESC = "desc"
+
+
+class PaginationMeta(BaseModel):
+    """Pagination metadata"""
+    page: int = Field(..., description="Current page number (1-indexed)")
+    page_size: int = Field(..., description="Number of items per page")
+    total_items: int = Field(..., description="Total number of items")
+    total_pages: int = Field(..., description="Total number of pages")
+    has_next: bool = Field(..., description="Whether there is a next page")
+    has_previous: bool = Field(..., description="Whether there is a previous page")
+
+
+class ScanHistoryItem(BaseModel):
+    """Single scan item in history"""
+    scan_id: str
+    status: str
+    target_type: Optional[str] = None
+    target_name: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    passed: int = 0
+    failed: int = 0
+    total_tests: int = 0
+    progress: float = 0.0
+    html_report_path: Optional[str] = None
+    jsonl_report_path: Optional[str] = None
+
+
+class ScanHistoryResponse(BaseModel):
+    """Paginated response for scan history"""
+    scans: List[ScanHistoryItem]
+    pagination: PaginationMeta
+    total_count: int = Field(..., description="Total number of scans (for backward compatibility)")
 
 
 class PluginInfo(BaseModel):

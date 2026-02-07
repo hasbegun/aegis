@@ -81,6 +81,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get pastScans => '이전 스캔';
 
   @override
+  String get recentScans => '최근 스캔';
+
+  @override
+  String get viewAll => '모두 보기';
+
+  @override
   String get llmVulnerabilityScanner => 'LLM 취약점 스캐너';
 
   @override

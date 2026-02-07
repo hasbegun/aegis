@@ -32,6 +32,12 @@ ScanConfig _$ScanConfigFromJson(Map<String, dynamic> json) => ScanConfig(
       skipUnknown: json['skip_unknown'] as bool? ?? false,
       buffsIncludeOriginalPrompt:
           json['buffs_include_original_prompt'] as bool? ?? false,
+      outputDir: json['output_dir'] as String?,
+      noReport: json['no_report'] as bool? ?? false,
+      continueOnError: json['continue_on_error'] as bool? ?? false,
+      excludeProbes: json['exclude_probes'] as String?,
+      excludeDetectors: json['exclude_detectors'] as String?,
+      timeoutPerProbe: (json['timeout_per_probe'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$ScanConfigToJson(ScanConfig instance) =>
@@ -56,4 +62,10 @@ Map<String, dynamic> _$ScanConfigToJson(ScanConfig instance) =>
       'verbose': instance.verbose,
       'skip_unknown': instance.skipUnknown,
       'buffs_include_original_prompt': instance.buffsIncludeOriginalPrompt,
+      'output_dir': instance.outputDir,
+      'no_report': instance.noReport,
+      'continue_on_error': instance.continueOnError,
+      'exclude_probes': instance.excludeProbes,
+      'exclude_detectors': instance.excludeDetectors,
+      'timeout_per_probe': instance.timeoutPerProbe,
     };

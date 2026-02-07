@@ -8,6 +8,7 @@ import '../../providers/api_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../utils/ui_helpers.dart';
+import '../../utils/keyboard_shortcuts.dart';
 
 /// Settings screen for app configuration
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -190,29 +191,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context)!;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        final shouldPop = await _onWillPop();
-        if (shouldPop && context.mounted) {
-          Navigator.of(context).pop();
-        }
+    return Shortcuts(
+      shortcuts: {
+        KeyboardShortcuts.saveShortcut: const ShortcutIntent('save'),
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(l10n.settings),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.save),
-              onPressed: _saveSettings,
-            tooltip: l10n.saveSettings,
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppConstants.defaultPadding),
-        child: Column(
+      child: Actions(
+        actions: {
+          ShortcutIntent: ShortcutCallbackAction({
+            'save': _saveSettings,
+          }),
+        },
+        child: Focus(
+          autofocus: true,
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) async {
+              if (didPop) return;
+              final shouldPop = await _onWillPop();
+              if (shouldPop && context.mounted) {
+                Navigator.of(context).pop();
+              }
+            },
+            child: Scaffold(
+              appBar: AppBar(
+                title: Text(l10n.settings),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.save),
+                    onPressed: _saveSettings,
+                    tooltip: KeyboardShortcuts.formatHint(l10n.saveSettings, 'S'),
+                  ),
+                ],
+              ),
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(AppConstants.defaultPadding),
+                child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // API Configuration Section
@@ -576,9 +589,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-    ),
     );
   }
 

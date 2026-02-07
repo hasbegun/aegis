@@ -27,6 +27,8 @@
   "manageSavedProbes": "저장된 프로브 관리",
   "history": "기록",
   "pastScans": "이전 스캔",
+  "recentScans": "최근 스캔",
+  "viewAll": "모두 보기",
 
   "llmVulnerabilityScanner": "LLM 취약점 스캐너",
   "scanDescription": "탈옥, 프롬프트 인젝션, 독성 등 언어 모델의 취약점을 스캔합니다.",

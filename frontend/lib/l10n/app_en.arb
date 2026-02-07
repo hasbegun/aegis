@@ -27,6 +27,8 @@
   "manageSavedProbes": "Manage saved probes",
   "history": "History",
   "pastScans": "Past scans",
+  "recentScans": "Recent Scans",
+  "viewAll": "View All",
 
   "llmVulnerabilityScanner": "LLM Vulnerability Scanner",
   "scanDescription": "Scan your language models for vulnerabilities including jailbreaks, prompt injection, toxicity, and more.",

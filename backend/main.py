@@ -3,8 +3,11 @@ Garak Backend - FastAPI wrapper for garak CLI
 Main entry point for the API server
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from api.routes import scan, plugins, config, system, custom_probes, workflow, models
 from config import settings
 from services.model_discovery import initialize_model_discovery
@@ -17,6 +20,32 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log requests with timing information."""
+
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+
+        # Process request
+        response = await call_next(request)
+
+        # Calculate duration
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log request details (skip health checks to reduce noise)
+        if request.url.path not in ["/health", "/"]:
+            logger.info(
+                f"{request.method} {request.url.path} - "
+                f"Status: {response.status_code} - "
+                f"Duration: {duration_ms:.2f}ms"
+            )
+
+        # Add timing header to response
+        response.headers["X-Response-Time"] = f"{duration_ms:.2f}ms"
+
+        return response
 
 
 @asynccontextmanager
@@ -53,6 +82,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configure GZip compression for responses > 500 bytes
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+# Add request logging middleware with timing
+app.add_middleware(RequestLoggingMiddleware)
+
 # Include routers
 app.include_router(scan.router, prefix="/api/v1/scan", tags=["Scan"])
 app.include_router(plugins.router, prefix="/api/v1/plugins", tags=["Plugins"])
@@ -78,6 +113,34 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/version")
+async def version_info():
+    """Version information endpoint"""
+    import sys
+    import subprocess
+
+    # Get garak version
+    garak_version = None
+    try:
+        result = subprocess.run(
+            ["python", "-m", "garak", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            garak_version = result.stdout.strip()
+    except Exception:
+        pass
+
+    return {
+        "backend_version": "1.0.0",
+        "api_version": "v1",
+        "python_version": sys.version.split()[0],
+        "garak_version": garak_version,
+    }
 
 
 if __name__ == "__main__":

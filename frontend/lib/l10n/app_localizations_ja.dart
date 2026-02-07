@@ -81,6 +81,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String get pastScans => '過去のスキャン';
 
   @override
+  String get recentScans => '最近のスキャン';
+
+  @override
+  String get viewAll => 'すべて表示';
+
+  @override
   String get llmVulnerabilityScanner => 'LLM脆弱性スキャナー';
 
   @override

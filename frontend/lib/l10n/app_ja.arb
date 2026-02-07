@@ -27,6 +27,8 @@
   "manageSavedProbes": "保存したプローブを管理",
   "history": "履歴",
   "pastScans": "過去のスキャン",
+  "recentScans": "最近のスキャン",
+  "viewAll": "すべて表示",
 
   "llmVulnerabilityScanner": "LLM脆弱性スキャナー",
   "scanDescription": "ジェイルブレイク、プロンプトインジェクション、毒性などの脆弱性について言語モデルをスキャンします。",

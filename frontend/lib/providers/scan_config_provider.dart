@@ -29,6 +29,12 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
       verbose: state?.verbose ?? 0,
       skipUnknown: state?.skipUnknown ?? false,
       buffsIncludeOriginalPrompt: state?.buffsIncludeOriginalPrompt ?? false,
+      outputDir: state?.outputDir,
+      noReport: state?.noReport ?? false,
+      continueOnError: state?.continueOnError ?? false,
+      excludeProbes: state?.excludeProbes,
+      excludeDetectors: state?.excludeDetectors,
+      timeoutPerProbe: state?.timeoutPerProbe,
     );
   }
 
@@ -138,6 +144,42 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
   void setBuffsIncludeOriginalPrompt(bool value) {
     if (state == null) return;
     state = state!.copyWith(buffsIncludeOriginalPrompt: value);
+  }
+
+  /// Set output directory
+  void setOutputDir(String? value) {
+    if (state == null) return;
+    state = state!.copyWith(outputDir: value);
+  }
+
+  /// Set no report mode
+  void setNoReport(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(noReport: value);
+  }
+
+  /// Set continue on error mode
+  void setContinueOnError(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(continueOnError: value);
+  }
+
+  /// Set exclude probes
+  void setExcludeProbes(String? value) {
+    if (state == null) return;
+    state = state!.copyWith(excludeProbes: value);
+  }
+
+  /// Set exclude detectors
+  void setExcludeDetectors(String? value) {
+    if (state == null) return;
+    state = state!.copyWith(excludeDetectors: value);
+  }
+
+  /// Set timeout per probe
+  void setTimeoutPerProbe(int? value) {
+    if (state == null) return;
+    state = state!.copyWith(timeoutPerProbe: value);
   }
 
   /// Set entire configuration (used when resuming from background)

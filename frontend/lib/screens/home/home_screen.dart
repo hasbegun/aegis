@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:aegis/l10n/app_localizations.dart';
 import '../../config/constants.dart';
+import '../../utils/keyboard_shortcuts.dart';
 import '../../widgets/background_scans_indicator.dart';
+import '../../providers/api_provider.dart';
 import '../../providers/background_scans_provider.dart';
 import '../configuration/model_selection_screen.dart';
 import '../browse/browse_probes_screen.dart';
 import '../history/scan_history_screen.dart';
+import '../results/enhanced_results_screen.dart';
 import '../probes/write_probe_screen.dart';
 import '../probes/manage_probes_screen.dart';
 import '../settings/settings_screen.dart';
@@ -20,13 +24,87 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  List<Map<String, dynamic>>? _recentScans;
+  bool _isLoadingRecentScans = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentScans();
+  }
+
+  Future<void> _loadRecentScans() async {
+    try {
+      final apiService = ref.read(apiServiceProvider);
+      final history = await apiService.getScanHistory();
+
+      // Sort by date (newest first) and take top 5
+      history.sort((a, b) {
+        final dateA = DateTime.tryParse(a['started_at'] ?? '') ?? DateTime(2000);
+        final dateB = DateTime.tryParse(b['started_at'] ?? '') ?? DateTime(2000);
+        return dateB.compareTo(dateA);
+      });
+
+      if (mounted) {
+        setState(() {
+          _recentScans = history.take(5).toList();
+          _isLoadingRecentScans = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _recentScans = [];
+          _isLoadingRecentScans = false;
+        });
+      }
+    }
+  }
+
+  void _navigateToNewScan() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ModelSelectionScreen()),
+    );
+  }
+
+  void _navigateToSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SettingsScreen()),
+    );
+  }
+
+  void _navigateToHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ScanHistoryScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final l10n = AppLocalizations.of(context)!;
 
-    return Scaffold(
+    return Shortcuts(
+      shortcuts: {
+        KeyboardShortcuts.newShortcut: const ShortcutIntent('new_scan'),
+        KeyboardShortcuts.settingsShortcut: const ShortcutIntent('settings'),
+        KeyboardShortcuts.historyShortcut: const ShortcutIntent('history'),
+      },
+      child: Actions(
+        actions: {
+          ShortcutIntent: ShortcutCallbackAction({
+            'new_scan': _navigateToNewScan,
+            'settings': _navigateToSettings,
+            'history': _navigateToHistory,
+          }),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
       appBar: AppBar(
         title: Row(
           mainAxisSize: MainAxisSize.min,
@@ -95,15 +173,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SettingsScreen(),
-                ),
-              );
-            },
-            tooltip: l10n.settings,
+            onPressed: _navigateToSettings,
+            tooltip: KeyboardShortcuts.formatHint(l10n.settings, ','),
           ),
           IconButton(
             icon: const Icon(Icons.info_outline),
@@ -135,6 +206,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: AppConstants.defaultPadding),
                   _buildQuickActions(context),
+                  const SizedBox(height: AppConstants.largePadding),
+
+                  // Recent Scans Section
+                  _buildRecentScansSection(context),
+
                   // Add extra padding at bottom for floating indicator
                   const SizedBox(height: 80),
                 ],
@@ -157,6 +233,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       //   icon: const Icon(Icons.add),
       //   label: const Text('New Scan'),
       // ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -220,6 +299,205 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildRecentScansSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context)!;
+
+    // Don't show section if loading or no scans
+    if (_isLoadingRecentScans) {
+      return const SizedBox.shrink();
+    }
+
+    if (_recentScans == null || _recentScans!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              l10n.recentScans,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            TextButton(
+              onPressed: _navigateToHistory,
+              child: Text(l10n.viewAll),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppConstants.smallPadding),
+        ..._recentScans!.map((scan) => _buildRecentScanItem(context, scan)),
+        const SizedBox(height: AppConstants.largePadding),
+      ],
+    );
+  }
+
+  Widget _buildRecentScanItem(BuildContext context, Map<String, dynamic> scan) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final scanId = scan['scan_id'] as String?;
+    final config = scan['config'] as Map<String, dynamic>?;
+    final targetName = scan['target_name'] as String? ??
+        config?['target_name'] as String? ??
+        'Unknown';
+    final status = scan['status'] as String? ?? 'unknown';
+    final startedAt = scan['started_at'] as String?;
+    final passed = scan['passed'] as int? ?? 0;
+    final failed = scan['failed'] as int? ?? 0;
+
+    final startDate = startedAt != null ? DateTime.tryParse(startedAt) : null;
+    final statusColor = _getStatusColor(status);
+    final isCompleted = status == 'completed';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: scanId != null && isCompleted
+            ? () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => EnhancedResultsScreen(scanId: scanId),
+                  ),
+                )
+            : null,
+        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              // Status icon
+              Icon(
+                _getStatusIcon(status),
+                color: statusColor,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              // Target name and date
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      targetName,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (startDate != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('MMM d, y HH:mm').format(startDate),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              // Results or status chip
+              if (isCompleted && (passed > 0 || failed > 0)) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '$passed',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '$failed',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: statusColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+              // Chevron for completed scans
+              if (isCompleted) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right,
+                  color: colorScheme.onSurfaceVariant,
+                  size: 20,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Colors.green;
+      case 'running':
+        return Colors.blue;
+      case 'failed':
+      case 'error':
+        return Colors.red;
+      case 'cancelled':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'completed':
+        return Icons.check_circle;
+      case 'running':
+        return Icons.pending;
+      case 'failed':
+      case 'error':
+        return Icons.error;
+      case 'cancelled':
+        return Icons.cancel;
+      default:
+        return Icons.help;
+    }
+  }
+
   Widget _buildQuickActions(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
@@ -236,14 +514,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           title: l10n.scan,
           subtitle: l10n.startNewScan,
           icon: Icons.play_circle_outline,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ModelSelectionScreen(),
-              ),
-            );
-          },
+          shortcutHint: '${KeyboardShortcuts.modifierKey}+N',
+          onTap: _navigateToNewScan,
         ),
         _buildActionCard(
           context,
@@ -292,14 +564,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           title: l10n.history,
           subtitle: l10n.pastScans,
           icon: Icons.history,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ScanHistoryScreen(),
-              ),
-            );
-          },
+          shortcutHint: '${KeyboardShortcuts.modifierKey}+H',
+          onTap: _navigateToHistory,
         ),
       ],
     );
@@ -311,41 +577,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     required String subtitle,
     required IconData icon,
     required VoidCallback onTap,
+    String? shortcutHint,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.borderRadius),
-        child: Padding(
-          padding: const EdgeInsets.all(AppConstants.defaultPadding),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 40,
-                color: colorScheme.primary,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
+    return Tooltip(
+      message: shortcutHint != null ? '$title ($shortcutHint)' : title,
+      child: Card(
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppConstants.borderRadius),
+          child: Padding(
+            padding: const EdgeInsets.all(AppConstants.defaultPadding),
+            child: Stack(
+              children: [
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 40,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
+                if (shortcutHint != null)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        shortcutHint,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

@@ -7,6 +7,8 @@ import '../../config/constants.dart';
 import '../../models/scan_status.dart';
 import '../../services/export_service.dart';
 import '../../providers/api_provider.dart';
+import '../../widgets/skeleton_loader.dart';
+import '../../widgets/breadcrumb_nav.dart';
 import '../workflow/workflow_viewer_screen.dart';
 import 'detailed_report_screen.dart';
 
@@ -105,17 +107,44 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
                   ],
                 ),
         ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-                ? _buildErrorView(theme)
-                : TabBarView(
-                    children: [
-                      _buildSummaryTab(theme),
-                      _buildChartsTab(theme),
-                      WorkflowViewerScreen(scanId: widget.scanId),
-                    ],
+        body: Column(
+          children: [
+            // Breadcrumb navigation
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                border: Border(
+                  bottom: BorderSide(
+                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
                   ),
+                ),
+              ),
+              child: BreadcrumbNav(
+                items: [
+                  BreadcrumbPaths.home(context),
+                  BreadcrumbPaths.history(context),
+                  BreadcrumbPaths.results(scanId: widget.scanId),
+                ],
+              ),
+            ),
+            // Main content
+            Expanded(
+              child: _isLoading
+                  ? const ResultsSummarySkeleton()
+                  : _error != null
+                      ? _buildErrorView(theme)
+                      : TabBarView(
+                          children: [
+                            _buildSummaryTab(theme),
+                            _buildChartsTab(theme),
+                            WorkflowViewerScreen(scanId: widget.scanId),
+                          ],
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -180,6 +209,7 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
     final passed = results['passed'] ?? 0;
     final failed = results['failed'] ?? 0;
     final total = passed + failed;
+    final digest = _results?['digest'] as Map<String, dynamic>?;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(AppConstants.defaultPadding),
@@ -188,6 +218,14 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
         children: [
           if (total > 0) ...[
             _buildChartsCard(theme, passed, failed, total),
+            const SizedBox(height: AppConstants.defaultPadding),
+            // Probe breakdown chart
+            if (digest != null && digest.isNotEmpty) ...[
+              _buildProbeBreakdownChart(theme, digest),
+              const SizedBox(height: AppConstants.defaultPadding),
+              // Vulnerability severity heatmap
+              _buildSeverityHeatmap(theme, digest),
+            ],
           ] else ...[
             Center(
               child: Padding(
@@ -406,6 +444,614 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
         Text('$label: $value'),
       ],
     );
+  }
+
+  Widget _buildProbeBreakdownChart(ThemeData theme, Map<String, dynamic> digest) {
+    // Parse probe data and calculate pass/fail per probe
+    final probeData = <_ProbeChartData>[];
+
+    for (final entry in digest.entries) {
+      final probeName = entry.key;
+      final data = entry.value as Map<String, dynamic>?;
+      if (data == null) continue;
+
+      // Extract pass/fail counts from probe data
+      final passed = (data['passed'] as num?)?.toInt() ?? 0;
+      final failed = (data['failed'] as num?)?.toInt() ?? 0;
+      final passRate = data['pass_rate']?.toDouble();
+
+      // Calculate pass rate if not provided
+      final total = passed + failed;
+      final calculatedPassRate = passRate ?? (total > 0 ? (passed / total * 100) : 0.0);
+
+      if (total > 0) {
+        probeData.add(_ProbeChartData(
+          name: probeName,
+          passed: passed,
+          failed: failed,
+          passRate: calculatedPassRate,
+        ));
+      }
+    }
+
+    // Sort by pass rate (lowest first to highlight vulnerabilities)
+    probeData.sort((a, b) => a.passRate.compareTo(b.passRate));
+
+    if (probeData.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Limit to top 15 probes for readability
+    final displayData = probeData.take(15).toList();
+    final chartHeight = (displayData.length * 40.0).clamp(200.0, 600.0);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.defaultPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.science, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Vulnerability by Probe',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                // Legend
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 12, height: 12, color: Colors.green),
+                      const SizedBox(width: 4),
+                      const Text('Pass', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 12, height: 12, color: Colors.red),
+                      const SizedBox(width: 4),
+                      const Text('Fail', style: TextStyle(fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sorted by pass rate (lowest first)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: chartHeight,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: displayData.map((d) => (d.passed + d.failed).toDouble()).reduce((a, b) => a > b ? a : b) * 1.1,
+                  barTouchData: BarTouchData(
+                    enabled: true,
+                    touchTooltipData: BarTouchTooltipData(
+                      getTooltipColor: (group) => theme.colorScheme.surfaceContainerHighest,
+                      tooltipPadding: const EdgeInsets.all(8),
+                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                        final probe = displayData[group.x.toInt()];
+                        final shortName = _getShortProbeName(probe.name);
+                        return BarTooltipItem(
+                          '$shortName\n',
+                          TextStyle(
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: 'Pass: ${probe.passed}  Fail: ${probe.failed}\n',
+                              style: TextStyle(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 11,
+                                fontWeight: FontWeight.normal,
+                              ),
+                            ),
+                            TextSpan(
+                              text: 'Rate: ${probe.passRate.toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                color: _getPassRateColor(probe.passRate),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          if (value < 0 || value >= displayData.length) {
+                            return const SizedBox.shrink();
+                          }
+                          final probe = displayData[value.toInt()];
+                          final shortName = _getShortProbeName(probe.name);
+                          return SideTitleWidget(
+                            axisSide: meta.axisSide,
+                            angle: 0.5,
+                            child: Text(
+                              shortName.length > 12 ? '${shortName.substring(0, 10)}...' : shortName,
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          );
+                        },
+                        reservedSize: 60,
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 40,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            value.toInt().toString(),
+                            style: const TextStyle(fontSize: 10),
+                          );
+                        },
+                      ),
+                    ),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: 5,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: displayData.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final probe = entry.value;
+                    return BarChartGroupData(
+                      x: index,
+                      barRods: [
+                        BarChartRodData(
+                          toY: (probe.passed + probe.failed).toDouble(),
+                          rodStackItems: [
+                            BarChartRodStackItem(0, probe.passed.toDouble(), Colors.green),
+                            BarChartRodStackItem(
+                              probe.passed.toDouble(),
+                              (probe.passed + probe.failed).toDouble(),
+                              Colors.red,
+                            ),
+                          ],
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          width: 20,
+                        ),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            if (probeData.length > 15) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  'Showing 15 of ${probeData.length} probes (sorted by vulnerability)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeverityHeatmap(ThemeData theme, Map<String, dynamic> digest) {
+    // Group probes by category and calculate aggregate pass rates
+    final categoryData = <String, _CategoryHeatmapData>{};
+
+    for (final entry in digest.entries) {
+      final probeName = entry.key;
+      final data = entry.value as Map<String, dynamic>?;
+      if (data == null) continue;
+
+      // Extract category from probe name (e.g., "garak.probes.dan.Dan_11_0" -> "dan")
+      final category = _extractProbeCategory(probeName);
+      final passed = (data['passed'] as num?)?.toInt() ?? 0;
+      final failed = (data['failed'] as num?)?.toInt() ?? 0;
+
+      if (passed + failed > 0) {
+        if (!categoryData.containsKey(category)) {
+          categoryData[category] = _CategoryHeatmapData(category: category);
+        }
+        categoryData[category]!.addProbe(passed, failed);
+      }
+    }
+
+    if (categoryData.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Sort by pass rate (lowest first to highlight vulnerable categories)
+    final sortedCategories = categoryData.values.toList()
+      ..sort((a, b) => a.passRate.compareTo(b.passRate));
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.defaultPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.grid_on, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Vulnerability Severity Heatmap',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pass rate by probe category (hover for details)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Severity legend
+            _buildSeverityLegend(theme),
+            const SizedBox(height: 16),
+            // Heatmap grid
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: sortedCategories.map((data) {
+                return _buildHeatmapCell(theme, data);
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+            // Summary stats
+            _buildHeatmapSummary(theme, sortedCategories),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSeverityLegend(ThemeData theme) {
+    final severityLevels = [
+      ('Critical', Colors.red.shade700, '0-20%'),
+      ('High', Colors.red.shade400, '20-40%'),
+      ('Medium', Colors.orange, '40-60%'),
+      ('Low', Colors.yellow.shade700, '60-80%'),
+      ('Safe', Colors.green, '80-100%'),
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Text(
+            'Severity: ',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(width: 8),
+          ...severityLevels.map((level) {
+            final (label, color, range) = level;
+            return Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$label ($range)',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeatmapCell(ThemeData theme, _CategoryHeatmapData data) {
+    final color = _getSeverityColor(data.passRate);
+    final textColor = data.passRate < 50 ? Colors.white : Colors.black87;
+
+    return Tooltip(
+      message: '${data.category}\n'
+          'Pass Rate: ${data.passRate.toStringAsFixed(1)}%\n'
+          'Passed: ${data.totalPassed}\n'
+          'Failed: ${data.totalFailed}\n'
+          'Probes: ${data.probeCount}',
+      child: InkWell(
+        onTap: () {
+          _showCategoryDetails(theme, data);
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 100,
+          height: 80,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.4),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _formatCategoryName(data.category),
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${data.passRate.toStringAsFixed(0)}%',
+                style: TextStyle(
+                  color: textColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+              ),
+              Text(
+                '${data.probeCount} probes',
+                style: TextStyle(
+                  color: textColor.withValues(alpha: 0.8),
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCategoryDetails(ThemeData theme, _CategoryHeatmapData data) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: _getSeverityColor(data.passRate),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(_formatCategoryName(data.category)),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDetailRow('Pass Rate', '${data.passRate.toStringAsFixed(1)}%', _getSeverityColor(data.passRate)),
+            _buildDetailRow('Tests Passed', data.totalPassed.toString(), Colors.green),
+            _buildDetailRow('Tests Failed', data.totalFailed.toString(), Colors.red),
+            _buildDetailRow('Total Tests', (data.totalPassed + data.totalFailed).toString(), theme.colorScheme.primary),
+            _buildDetailRow('Probes Tested', data.probeCount.toString(), theme.colorScheme.secondary),
+            const Divider(height: 24),
+            Text(
+              'Severity Level: ${_getSeverityLabel(data.passRate)}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: _getSeverityColor(data.passRate),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeatmapSummary(ThemeData theme, List<_CategoryHeatmapData> categories) {
+    final criticalCount = categories.where((c) => c.passRate < 20).length;
+    final highCount = categories.where((c) => c.passRate >= 20 && c.passRate < 40).length;
+    final mediumCount = categories.where((c) => c.passRate >= 40 && c.passRate < 60).length;
+    final lowCount = categories.where((c) => c.passRate >= 60 && c.passRate < 80).length;
+    final safeCount = categories.where((c) => c.passRate >= 80).length;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildHeatmapSummaryItem('Critical', criticalCount, Colors.red.shade700),
+          _buildHeatmapSummaryItem('High', highCount, Colors.red.shade400),
+          _buildHeatmapSummaryItem('Medium', mediumCount, Colors.orange),
+          _buildHeatmapSummaryItem('Low', lowCount, Colors.yellow.shade700),
+          _buildHeatmapSummaryItem('Safe', safeCount, Colors.green),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeatmapSummaryItem(String label, int count, Color color) {
+    return Column(
+      children: [
+        Text(
+          count.toString(),
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  String _extractProbeCategory(String probeName) {
+    // Extract category from full probe name
+    // e.g., "garak.probes.dan.Dan_11_0" -> "dan"
+    // e.g., "probes.encoding.InjectBase64" -> "encoding"
+    final parts = probeName.split('.');
+    if (parts.length >= 3) {
+      // Look for "probes" in the path and get the next segment
+      final probesIndex = parts.indexOf('probes');
+      if (probesIndex >= 0 && probesIndex + 1 < parts.length) {
+        return parts[probesIndex + 1];
+      }
+    }
+    // Fallback: use second to last segment or full name
+    if (parts.length >= 2) {
+      return parts[parts.length - 2];
+    }
+    return probeName;
+  }
+
+  String _formatCategoryName(String category) {
+    // Convert category names to title case and expand abbreviations
+    final nameMap = {
+      'dan': 'DAN Jailbreak',
+      'encoding': 'Encoding',
+      'xss': 'XSS Attacks',
+      'continuation': 'Continuation',
+      'gcg': 'GCG Attack',
+      'goodside': 'Goodside',
+      'knownbadsigs': 'Known Bad Sigs',
+      'leakreplay': 'Leak Replay',
+      'lmrc': 'LMRC',
+      'malwaregen': 'Malware Gen',
+      'misleading': 'Misleading',
+      'packagehallucination': 'Package Halluc.',
+      'promptinject': 'Prompt Inject',
+      'realtoxicityprompts': 'Toxic Prompts',
+      'snowball': 'Snowball',
+      'suffix': 'Suffix Attack',
+      'tap': 'TAP Attack',
+      'test': 'Test',
+      'visual_jailbreak': 'Visual Jailbreak',
+    };
+    return nameMap[category.toLowerCase()] ??
+           category.split('_').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : w).join(' ');
+  }
+
+  Color _getSeverityColor(double passRate) {
+    if (passRate < 20) return Colors.red.shade700;
+    if (passRate < 40) return Colors.red.shade400;
+    if (passRate < 60) return Colors.orange;
+    if (passRate < 80) return Colors.yellow.shade700;
+    return Colors.green;
+  }
+
+  String _getSeverityLabel(double passRate) {
+    if (passRate < 20) return 'Critical';
+    if (passRate < 40) return 'High';
+    if (passRate < 60) return 'Medium';
+    if (passRate < 80) return 'Low';
+    return 'Safe';
+  }
+
+  String _getShortProbeName(String fullName) {
+    // Extract just the probe class name from full module path
+    // e.g., "garak.probes.encoding.InjectBase64" -> "InjectBase64"
+    final parts = fullName.split('.');
+    return parts.isNotEmpty ? parts.last : fullName;
   }
 
   Widget _buildMetricsCard(ThemeData theme, Map<String, dynamic> results) {
@@ -815,5 +1461,42 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
       return Colors.blue[300];
     }
     return null;
+  }
+}
+
+/// Helper class to hold probe chart data
+class _ProbeChartData {
+  final String name;
+  final int passed;
+  final int failed;
+  final double passRate;
+
+  _ProbeChartData({
+    required this.name,
+    required this.passed,
+    required this.failed,
+    required this.passRate,
+  });
+}
+
+/// Helper class to hold aggregated category data for heatmap
+class _CategoryHeatmapData {
+  final String category;
+  int totalPassed = 0;
+  int totalFailed = 0;
+  int probeCount = 0;
+
+  _CategoryHeatmapData({required this.category});
+
+  void addProbe(int passed, int failed) {
+    totalPassed += passed;
+    totalFailed += failed;
+    probeCount++;
+  }
+
+  double get passRate {
+    final total = totalPassed + totalFailed;
+    if (total == 0) return 0;
+    return (totalPassed / total) * 100;
   }
 }

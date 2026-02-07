@@ -81,6 +81,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pastScans => 'Past scans';
 
   @override
+  String get recentScans => 'Recent Scans';
+
+  @override
+  String get viewAll => 'View All';
+
+  @override
   String get llmVulnerabilityScanner => 'LLM Vulnerability Scanner';
 
   @override

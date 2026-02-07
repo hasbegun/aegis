@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:aegis/l10n/app_localizations.dart';
 import '../../providers/api_provider.dart';
+import '../../widgets/breadcrumb_nav.dart';
 
 class DetailedReportScreen extends ConsumerStatefulWidget {
   final String scanId;
@@ -58,6 +59,8 @@ class _DetailedReportScreenState extends ConsumerState<DetailedReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)!.detailedReport),
@@ -71,10 +74,43 @@ class _DetailedReportScreenState extends ConsumerState<DetailedReportScreen> {
           ),
         ],
       ),
-      body: Stack(
+      body: Column(
         children: [
-          if (_error != null)
-            Center(
+          // Breadcrumb navigation
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              border: Border(
+                bottom: BorderSide(
+                  color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+            child: BreadcrumbNav(
+              items: [
+                BreadcrumbPaths.home(context),
+                BreadcrumbPaths.history(context, onTap: () {
+                  // Pop twice to get back to history (past results screen)
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop();
+                }),
+                BreadcrumbItem(
+                  label: 'Results',
+                  icon: Icons.assessment,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                BreadcrumbPaths.detailedReport(),
+              ],
+            ),
+          ),
+          // Main content
+          Expanded(
+            child: Stack(
+              children: [
+                if (_error != null)
+                  Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -119,6 +155,9 @@ class _DetailedReportScreenState extends ConsumerState<DetailedReportScreen> {
             const Center(
               child: CircularProgressIndicator(),
             ),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -5,6 +5,7 @@ import '../../config/constants.dart';
 import '../../providers/plugins_provider.dart';
 import '../../providers/scan_config_provider.dart';
 import '../../utils/ui_helpers.dart';
+import '../../widgets/skeleton_loader.dart';
 import '../scan/scan_execution_screen.dart';
 import 'advanced_config_screen.dart';
 
@@ -69,7 +70,7 @@ class _ProbeSelectionScreenState extends ConsumerState<ProbeSelectionScreen> {
         ],
       ),
       body: categorizedProbes.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const ProbeSelectionSkeleton(),
         error: (error, stack) => Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
