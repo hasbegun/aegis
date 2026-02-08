@@ -1,30 +1,17 @@
-# Aegis Backend - Garak Vulnerability Scanner API
+# Aegis Backend API - Lightweight FastAPI service
+# Garak now runs in its own container (see Dockerfile.garak)
 
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install build dependencies including Rust (required for base2048)
+# Minimal system dependencies (no Rust, no git - garak is in its own container)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
     curl \
-    pkg-config \
-    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Rust (required for some Python packages like base2048)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:$PATH"
 
 # Upgrade pip
 RUN pip install --no-cache-dir --upgrade pip
-
-# Clone garak from GitHub (dev branch) and install
-RUN git clone --depth 1 \
-    --branch dev https://github.com/hasbegun/garak.git /tmp/garak \
-    && pip install --no-cache-dir /tmp/garak \
-    && rm -rf /tmp/garak
 
 # Install backend dependencies
 COPY requirements.txt .
@@ -33,19 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create default garak_reports directory (can be overridden by volume mount)
+# Reports directory (shared volume mount point, read-only)
 RUN mkdir -p /data/garak_reports
-
-# Create garak site config to use our custom report directory
-RUN mkdir -p /root/.config/garak && \
-    echo 'reporting:' > /root/.config/garak/garak.site.yaml && \
-    echo '  report_dir: /data/garak_reports' >> /root/.config/garak/garak.site.yaml
-
-# Clean up build dependencies to reduce image size
-RUN apt-get purge -y build-essential \
-    && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /root/.cargo /root/.rustup
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -54,12 +30,13 @@ ENV HOST=0.0.0.0
 ENV PORT=8888
 ENV LOG_LEVEL=INFO
 ENV GARAK_REPORTS_DIR=/data/garak_reports
+ENV GARAK_SERVICE_URL=http://garak:9090
 
 # Expose port
 EXPOSE 8888
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+# Health check (faster start since no garak to initialize)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')" || exit 1
 
 # Run the application

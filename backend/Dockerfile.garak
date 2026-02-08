@@ -1,0 +1,61 @@
+# Garak Vulnerability Scanner Service
+# Thin REST/SSE API wrapping the garak CLI
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install build dependencies (Rust for base2048, git for garak clone)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    build-essential \
+    curl \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (required for some Python packages like base2048)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:$PATH"
+
+RUN pip install --no-cache-dir --upgrade pip
+
+# Clone garak from GitHub (dev branch) and install
+RUN git clone --depth 1 \
+    --branch dev https://github.com/hasbegun/garak.git /tmp/garak \
+    && pip install --no-cache-dir /tmp/garak \
+    && rm -rf /tmp/garak
+
+# Install garak service dependencies
+COPY services/garak_service/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Copy garak service code
+COPY services/garak_service/ /app/
+
+# Create report directory and configure garak to use it
+# 1. garak site config (primary)
+# 2. Symlink default garak_runs dir to shared volume (fallback)
+RUN mkdir -p /data/garak_reports && \
+    mkdir -p /root/.config/garak && \
+    echo 'reporting:' > /root/.config/garak/garak.site.yaml && \
+    echo '  report_dir: /data/garak_reports' >> /root/.config/garak/garak.site.yaml && \
+    mkdir -p /root/.local/share/garak && \
+    ln -sf /data/garak_reports /root/.local/share/garak/garak_runs
+
+# Clean up build dependencies to reduce image size
+RUN apt-get purge -y build-essential \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /root/.cargo /root/.rustup
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV GARAK_REPORTS_DIR=/data/garak_reports
+
+EXPOSE 9090
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')" || exit 1
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "9090"]

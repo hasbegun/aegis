@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Garak Configuration
     garak_path: str | None = None
     garak_reports_dir: str | None = None  # Default: ~/.local/share/garak/garak_runs
+    garak_service_url: str = "http://localhost:9090"  # Garak service container URL
 
     # Ollama Configuration
     ollama_host: str = "http://localhost:11434"

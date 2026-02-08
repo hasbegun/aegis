@@ -379,7 +379,11 @@ async def scan_progress_websocket(websocket: WebSocket, scan_id: str):
                 })
                 break
 
-            # Send current status
+            is_finished = scan_info['status'] in [
+                ScanStatus.COMPLETED, ScanStatus.FAILED, ScanStatus.CANCELLED
+            ]
+
+            # Send status update (always includes error_message)
             await websocket.send_json({
                 "scan_id": scan_info['scan_id'],
                 "status": scan_info['status'],
@@ -393,30 +397,11 @@ async def scan_progress_websocket(websocket: WebSocket, scan_id: str):
                 "failed": scan_info.get('failed', 0),
                 "elapsed_time": scan_info.get('elapsed_time'),
                 "estimated_remaining": scan_info.get('estimated_remaining'),
+                "error_message": scan_info.get('error_message'),
                 "timestamp": datetime.now().isoformat()
             })
 
-            # If scan completed or failed, send one final update with complete results, then close
-            if scan_info['status'] in [ScanStatus.COMPLETED, ScanStatus.FAILED, ScanStatus.CANCELLED]:
-                # Send final update with all results
-                await websocket.send_json({
-                    "scan_id": scan_info['scan_id'],
-                    "status": scan_info['status'],
-                    "progress": scan_info['progress'],
-                    "current_probe": scan_info.get('current_probe'),
-                    "completed_probes": scan_info.get('completed_probes', 0),
-                    "total_probes": scan_info.get('total_probes', 0),
-                    "current_iteration": scan_info.get('current_iteration', 0),
-                    "total_iterations": scan_info.get('total_iterations', 0),
-                    "passed": scan_info.get('passed', 0),
-                    "failed": scan_info.get('failed', 0),
-                    "elapsed_time": scan_info.get('elapsed_time'),
-                    "estimated_remaining": scan_info.get('estimated_remaining'),
-                    "error_message": scan_info.get('error_message'),
-                    "message": "Scan finished",
-                    "final_status": scan_info['status'],
-                    "timestamp": datetime.now().isoformat()
-                })
+            if is_finished:
                 break
 
             # Wait before sending next update

@@ -119,21 +119,9 @@ async def health_check():
 async def version_info():
     """Version information endpoint"""
     import sys
-    import subprocess
+    from services.garak_wrapper import garak_wrapper
 
-    # Get garak version
-    garak_version = None
-    try:
-        result = subprocess.run(
-            ["python", "-m", "garak", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            garak_version = result.stdout.strip()
-    except Exception:
-        pass
+    garak_version = garak_wrapper.get_garak_version()
 
     return {
         "backend_version": "1.0.0",

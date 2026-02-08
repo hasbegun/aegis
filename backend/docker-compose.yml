@@ -17,8 +17,38 @@ services:
 
       # Garak Configuration
       GARAK_REPORTS_DIR: "/data/garak_reports"
+      GARAK_SERVICE_URL: "http://garak:9090"
 
-      # LLM API Keys (pass from host environment or .env file)
+      # Ollama (for model discovery / validation)
+      OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
+    volumes:
+      # Shared report volume (rw needed for scan deletion)
+      - garak-reports:/data/garak_reports
+    networks:
+      - aegis-network
+    depends_on:
+      garak:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  garak:
+    build:
+      context: .
+      dockerfile: Dockerfile.garak
+    container_name: aegis-garak
+    environment:
+      GARAK_REPORTS_DIR: "/data/garak_reports"
+
+      # Ollama host (garak needs this to connect to LLMs)
+      OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
+
+      # LLM API keys (garak is the one calling LLM APIs)
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       COHERE_API_KEY: "${COHERE_API_KEY:-}"
@@ -26,22 +56,23 @@ services:
       REPLICATE_API_TOKEN: "${REPLICATE_API_TOKEN:-}"
       NIM_API_KEY: "${NIM_API_KEY:-}"
       MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
-
-      # Ollama Configuration (for local models)
-      OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
     volumes:
-      # Mount local directory for persistent scan reports
-      # Change GARAK_REPORTS_HOST_DIR in .env to customize the host path
-      - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
+      # Shared report volume (read-write for garak)
+      - garak-reports:/data/garak_reports
     networks:
       - aegis-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8888/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+volumes:
+  garak-reports:
+    driver: local
 
 networks:
   aegis-network:

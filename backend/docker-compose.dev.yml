@@ -6,8 +6,6 @@ version: '3.8'
 
 services:
   backend:
-    # Override command to enable hot reload
-    # Exclude garak directory from reload watching since we use container's installed version
     command: >
       uvicorn main:app
       --host 0.0.0.0
@@ -17,36 +15,59 @@ services:
       --reload-dir /app/services
       --reload-dir /app/models
 
-    # Development environment
+    # Override depends_on to not require healthcheck in dev
+    depends_on:
+      garak:
+        condition: service_started
+
     environment:
       LOG_LEVEL: DEBUG
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-
-      # Garak reports directory (for scan reports)
       GARAK_REPORTS_DIR: "/data/garak_reports"
-
-      # Connect to local Ollama service running on host
-      # host.docker.internal resolves to host machine on Docker Desktop (macOS/Windows)
-      # For Linux, use extra_hosts below
+      GARAK_SERVICE_URL: "http://garak:9090"
       OLLAMA_HOST: "http://host.docker.internal:11434"
 
-    # Enable host.docker.internal on Linux
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
     volumes:
-      # Mount only specific directories for hot reload (NOT the entire app)
-      # This prevents local garak from overriding the container's installed version
+      # Mount source code for hot reload
       - ./api:/app/api:cached
       - ./services:/app/services:cached
       - ./models:/app/models:cached
       - ./config.py:/app/config.py:cached
       - ./main.py:/app/main.py:cached
-
-      # Mount garak_reports for persistent scan reports
+      # Bind mount for reports in dev (easier to inspect)
       - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
 
-    # Disable health check in dev mode for faster startup
     healthcheck:
       disable: true
+
+  garak:
+    command: >
+      uvicorn app:app
+      --host 0.0.0.0
+      --port 9090
+      --reload
+
+    environment:
+      LOG_LEVEL: DEBUG
+      OLLAMA_HOST: "http://host.docker.internal:11434"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      # Mount garak service code for hot reload
+      - ./services/garak_service:/app:cached
+      # Bind mount for reports in dev
+      - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
+
+    # Disable slow healthcheck in dev for faster startup
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 5s
+      timeout: 2s
+      retries: 1
+      start_period: 1s

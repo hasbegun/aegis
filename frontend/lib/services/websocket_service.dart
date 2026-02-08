@@ -106,14 +106,7 @@ class WebSocketService {
         return;
       }
 
-      // Check for completion message
-      if (data.containsKey('message') && data['message'] == 'Scan finished') {
-        _logger.i('Scan $expectedScanId finished: ${data['final_status']}');
-        disconnectScan(expectedScanId);
-        return;
-      }
-
-      // Parse status update
+      // Parse status update (every message includes scan_id)
       if (data.containsKey('scan_id')) {
         _logger.d('Parsing status update: progress=${data['progress']}, status=${data['status']}');
         final statusInfo = ScanStatusInfo.fromJson(data);
@@ -135,6 +128,12 @@ class WebSocketService {
           connection.controller.add(statusInfo);
         } else {
           _logger.w('Connection not found or controller closed for scan $expectedScanId');
+        }
+
+        // Disconnect after forwarding final status
+        if (statusInfo.status.isFinished) {
+          _logger.i('Scan $expectedScanId finished: ${statusInfo.status}');
+          disconnectScan(expectedScanId);
         }
       } else {
         _logger.w('Message does not contain scan_id field');
