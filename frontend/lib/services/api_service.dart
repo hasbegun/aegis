@@ -325,6 +325,63 @@ class ApiService {
       throw ApiException.fromDioException(e);
     }
   }
+
+  // ============================================================================
+  // Probe Details
+  // ============================================================================
+
+  /// Get per-probe breakdown with security context
+  Future<Map<String, dynamic>> getProbeDetails(
+    String scanId, {
+    int page = 1,
+    int pageSize = 50,
+    String? probeFilter,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': page,
+        'page_size': pageSize,
+      };
+      if (probeFilter != null && probeFilter.isNotEmpty) {
+        queryParams['probe_filter'] = probeFilter;
+      }
+      final response = await _dio.get(
+        '/scan/$scanId/probes',
+        queryParameters: queryParams,
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      _logger.e('Error getting probe details: ${e.message}');
+      throw ApiException.fromDioException(e);
+    }
+  }
+
+  /// Get individual test attempts for a specific probe
+  Future<Map<String, dynamic>> getProbeAttempts(
+    String scanId,
+    String probeClassname, {
+    int page = 1,
+    int pageSize = 20,
+    String? status,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page': page,
+        'page_size': pageSize,
+      };
+      if (status != null && status.isNotEmpty) {
+        queryParams['status'] = status;
+      }
+      final response = await _dio.get(
+        '/scan/$scanId/probes/$probeClassname/attempts',
+        queryParameters: queryParams,
+      );
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      _logger.e('Error getting probe attempts: ${e.message}');
+      throw ApiException.fromDioException(e);
+    }
+  }
 }
 
 /// Custom exception for API errors

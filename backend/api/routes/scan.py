@@ -13,6 +13,8 @@ from models.schemas import (
     PaginationMeta,
     ScanSortField,
     SortOrder,
+    ProbeDetailsResponse,
+    ProbeAttemptsResponse,
 )
 from services.garak_wrapper import garak_wrapper
 from datetime import datetime
@@ -356,6 +358,48 @@ async def get_detailed_report(scan_id: str):
             status_code=500,
             detail=f"Error reading report: {str(e)}"
         )
+
+
+@router.get("/{scan_id}/probes", response_model=ProbeDetailsResponse)
+async def get_probe_details(
+    scan_id: str,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+    probe_filter: Optional[str] = Query(None, description="Filter by probe name or category"),
+):
+    """
+    Get per-probe breakdown with security context for a scan.
+    Sorted by pass rate ascending (worst first).
+    """
+    result = garak_wrapper.get_probe_details(
+        scan_id, probe_filter=probe_filter, page=page, page_size=page_size
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Report not found for scan {scan_id}")
+    return result
+
+
+@router.get("/{scan_id}/probes/{probe_classname:path}/attempts", response_model=ProbeAttemptsResponse)
+async def get_probe_attempts(
+    scan_id: str,
+    probe_classname: str,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    status: Optional[str] = Query(None, description="Filter by status (passed, failed)"),
+):
+    """
+    Get individual test attempts for a specific probe.
+    Includes full prompt/output text, detector results, and security metadata.
+    """
+    result = garak_wrapper.get_probe_attempts(
+        scan_id, probe_classname, status_filter=status, page=page, page_size=page_size
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No attempts found for probe {probe_classname} in scan {scan_id}",
+        )
+    return result
 
 
 @router.websocket("/{scan_id}/progress")

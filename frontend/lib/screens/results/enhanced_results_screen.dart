@@ -11,6 +11,7 @@ import '../../widgets/skeleton_loader.dart';
 import '../../widgets/breadcrumb_nav.dart';
 import '../workflow/workflow_viewer_screen.dart';
 import 'detailed_report_screen.dart';
+import 'probe_list_view.dart';
 
 /// Enhanced results screen with charts and detailed breakdown
 class EnhancedResultsScreen extends ConsumerStatefulWidget {
@@ -67,7 +68,7 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
     final theme = Theme.of(context);
 
     return DefaultTabController(
-      length: 3, // Summary, Charts, Workflow
+      length: 4, // Summary, Charts, Probes, Workflow
       child: Scaffold(
         appBar: AppBar(
           title: Text(AppLocalizations.of(context)!.scanResults),
@@ -100,9 +101,11 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
           bottom: _isLoading || _error != null
               ? null
               : const TabBar(
+                  isScrollable: true,
                   tabs: [
                     Tab(text: 'Summary', icon: Icon(Icons.dashboard)),
                     Tab(text: 'Charts', icon: Icon(Icons.bar_chart)),
+                    Tab(text: 'Probes', icon: Icon(Icons.science)),
                     Tab(text: 'Workflow', icon: Icon(Icons.account_tree)),
                   ],
                 ),
@@ -139,6 +142,7 @@ class _EnhancedResultsScreenState extends ConsumerState<EnhancedResultsScreen> {
                           children: [
                             _buildSummaryTab(theme),
                             _buildChartsTab(theme),
+                            ProbeListView(scanId: widget.scanId),
                             WorkflowViewerScreen(scanId: widget.scanId),
                           ],
                         ),

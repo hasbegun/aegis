@@ -271,4 +271,22 @@ class BreadcrumbPaths {
       icon: Icons.edit,
     );
   }
+
+  /// Probe Results breadcrumb item (navigable)
+  static BreadcrumbItem probeResults(BuildContext context, {VoidCallback? onTap}) {
+    return BreadcrumbItem(
+      label: 'Probes',
+      icon: Icons.science,
+      onTap: onTap ?? () => Navigator.of(context).pop(),
+    );
+  }
+
+  /// Probe Detail breadcrumb item (current - no tap)
+  static BreadcrumbItem probeDetail(String probeName) {
+    final shortName = probeName.split('.').last;
+    return BreadcrumbItem(
+      label: shortName,
+      icon: Icons.bug_report,
+    );
+  }
 }

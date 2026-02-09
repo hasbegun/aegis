@@ -473,3 +473,63 @@ class WorkflowExportResponse(BaseModel):
     data: Optional[str] = Field(default=None, description="Exported data (for text formats)")
     file_path: Optional[str] = Field(default=None, description="Path to exported file (for binary formats)")
     download_url: Optional[str] = Field(default=None, description="URL to download the exported file")
+
+
+# ============================================================================
+# Probe Details Models
+# ============================================================================
+
+class ProbeSecurityMetadata(BaseModel):
+    """Security metadata for a probe category"""
+    category: str = Field(..., description="Human-readable category name")
+    severity: str = Field(..., description="Severity level (critical, high, medium, low, info)")
+    description: str = Field(..., description="What this probe tests")
+    risk_explanation: str = Field(..., description="Why failures matter")
+    mitigation: str = Field(..., description="How to defend against this")
+    cwe_ids: List[str] = Field(default_factory=list, description="CWE references")
+    owasp_llm: List[str] = Field(default_factory=list, description="OWASP LLM Top 10 references")
+
+
+class ProbeResult(BaseModel):
+    """Per-probe summary in probe details list"""
+    probe_classname: str = Field(..., description="Fully qualified probe class name")
+    category: str = Field(..., description="Probe category (first part of classname)")
+    passed: int = Field(default=0, description="Number of passed tests")
+    failed: int = Field(default=0, description="Number of failed tests")
+    total: int = Field(default=0, description="Total number of tests")
+    pass_rate: float = Field(default=0.0, description="Pass rate percentage (0-100)")
+    goal: Optional[str] = Field(default=None, description="Probe goal text")
+    security: ProbeSecurityMetadata = Field(..., description="Security metadata")
+
+
+class ProbeDetailsResponse(BaseModel):
+    """Response for probe details endpoint"""
+    scan_id: str = Field(..., description="Scan identifier")
+    total_probes: int = Field(..., description="Total number of probes (before pagination)")
+    page: int = Field(..., description="Current page number")
+    page_size: int = Field(..., description="Items per page")
+    probes: List[ProbeResult] = Field(default_factory=list, description="Probe results")
+
+
+class AttemptDetail(BaseModel):
+    """Individual test attempt detail"""
+    uuid: str = Field(default="", description="Attempt UUID")
+    seq: int = Field(default=0, description="Sequence number")
+    status: str = Field(..., description="Attempt status (passed, failed, unknown)")
+    prompt_text: str = Field(default="", description="Prompt text sent to the model")
+    output_text: str = Field(default="", description="First model output")
+    all_outputs: List[str] = Field(default_factory=list, description="All model outputs")
+    triggers: Optional[List[str]] = Field(default=None, description="Trigger patterns matched")
+    detector_results: Dict[str, Any] = Field(default_factory=dict, description="Detector results")
+    goal: Optional[str] = Field(default=None, description="Goal for this attempt")
+
+
+class ProbeAttemptsResponse(BaseModel):
+    """Response for probe attempts endpoint"""
+    scan_id: str = Field(..., description="Scan identifier")
+    probe_classname: str = Field(..., description="Probe class name")
+    security: ProbeSecurityMetadata = Field(..., description="Security metadata for this probe")
+    total_attempts: int = Field(..., description="Total number of attempts (before pagination)")
+    page: int = Field(..., description="Current page number")
+    page_size: int = Field(..., description="Items per page")
+    attempts: List[AttemptDetail] = Field(default_factory=list, description="Attempt details")

@@ -400,12 +400,15 @@ class GarakWrapper:
             for line in lines:
                 try:
                     entry = json.loads(line)
-                    if "status" in entry and entry.get("status") in [1, 2]:
+                    entry_type = entry.get("entry_type")
+                    if entry_type == "attempt" and entry.get("status") in [1, 2]:
                         scan_info["total_tests"] += 1
                         if entry["status"] == 2:
                             scan_info["passed"] += 1
                         elif entry["status"] == 1:
                             scan_info["failed"] += 1
+                    elif entry_type == "digest":
+                        scan_info["digest"] = entry.get("eval", {})
                 except json.JSONDecodeError:
                     continue
 
@@ -452,6 +455,7 @@ class GarakWrapper:
                 "status": scan_info["status"],
                 "error_message": scan_info.get("error_message"),
             },
+            "digest": scan_info.get("digest"),
             "html_report_path": scan_info.get("html_report_path"),
             "jsonl_report_path": scan_info.get("jsonl_report_path"),
             "output_lines": scan_info.get("output_lines", []),
@@ -468,6 +472,212 @@ class GarakWrapper:
             return (end - start).total_seconds()
         except Exception:
             return None
+
+    # ------------------------------------------------------------------
+    # Per-probe details (parsed from JSONL on demand)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_prompt_text(entry: dict) -> str:
+        """Extract prompt text from an attempt entry."""
+        prompt = entry.get("prompt", {})
+        turns = prompt.get("turns", [])
+        if turns:
+            content = turns[0].get("content", {})
+            if isinstance(content, dict):
+                return content.get("text", "")
+            return str(content)
+        return ""
+
+    @staticmethod
+    def _extract_output_text(entry: dict) -> str:
+        """Extract first output text from an attempt entry."""
+        outputs = entry.get("outputs", [])
+        if outputs:
+            first = outputs[0]
+            if isinstance(first, dict):
+                return first.get("text", "")
+            return str(first)
+        return ""
+
+    @staticmethod
+    def _extract_all_outputs(entry: dict) -> List[str]:
+        """Extract all output texts from an attempt entry."""
+        outputs = entry.get("outputs", [])
+        result = []
+        for o in outputs:
+            if isinstance(o, dict):
+                result.append(o.get("text", ""))
+            else:
+                result.append(str(o))
+        return result
+
+    def get_probe_details(
+        self,
+        scan_id: str,
+        probe_filter: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> Optional[Dict[str, Any]]:
+        """Parse JSONL report and return per-probe breakdown with security context."""
+        from services.probe_knowledge import get_probe_metadata
+
+        report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
+        if not report_file.exists():
+            return None
+
+        probes_data: Dict[str, Dict[str, Any]] = {}
+        digest_data = None
+
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    etype = entry.get("entry_type")
+
+                    if etype == "attempt":
+                        probe = entry.get("probe_classname", "unknown")
+                        if probe not in probes_data:
+                            probes_data[probe] = {
+                                "passed": 0,
+                                "failed": 0,
+                                "goal": entry.get("goal"),
+                            }
+                        status = entry.get("status")
+                        if status == 2:
+                            probes_data[probe]["passed"] += 1
+                        elif status == 1:
+                            probes_data[probe]["failed"] += 1
+
+                    elif etype == "eval":
+                        probe = entry.get("probe")
+                        if probe and probe in probes_data:
+                            probes_data[probe]["eval"] = {
+                                "detector": entry.get("detector"),
+                                "passed": entry.get("passed"),
+                                "total": entry.get("total"),
+                            }
+
+                    elif etype == "digest":
+                        digest_data = entry.get("eval", {})
+
+        except Exception as e:
+            logger.error(f"Error parsing probe details for {scan_id}: {e}")
+            return None
+
+        # Build response with knowledge base enrichment
+        probe_results = []
+        for probe_name, data in probes_data.items():
+            total = data["passed"] + data["failed"]
+            pass_rate = (data["passed"] / total * 100) if total > 0 else 0
+
+            metadata = get_probe_metadata(probe_name)
+
+            probe_results.append({
+                "probe_classname": probe_name,
+                "category": probe_name.split(".")[0],
+                "passed": data["passed"],
+                "failed": data["failed"],
+                "total": total,
+                "pass_rate": round(pass_rate, 1),
+                "goal": data.get("goal"),
+                "security": metadata,
+            })
+
+        # Apply optional filter
+        if probe_filter:
+            pf = probe_filter.lower()
+            probe_results = [
+                p for p in probe_results
+                if pf in p["probe_classname"].lower()
+                or pf in p["security"]["category"].lower()
+            ]
+
+        # Sort: worst pass rate first
+        probe_results.sort(key=lambda p: p["pass_rate"])
+
+        # Paginate
+        total_probes = len(probe_results)
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        return {
+            "scan_id": scan_id,
+            "total_probes": total_probes,
+            "page": page,
+            "page_size": page_size,
+            "probes": probe_results[start:end],
+        }
+
+    def get_probe_attempts(
+        self,
+        scan_id: str,
+        probe_classname: str,
+        status_filter: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Optional[Dict[str, Any]]:
+        """Get individual test attempts for a specific probe."""
+        from services.probe_knowledge import get_probe_metadata
+
+        report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
+        if not report_file.exists():
+            return None
+
+        attempts = []
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if entry.get("entry_type") != "attempt":
+                        continue
+                    if entry.get("probe_classname") != probe_classname:
+                        continue
+
+                    status_val = entry.get("status")
+                    status_str = "failed" if status_val == 1 else "passed" if status_val == 2 else "unknown"
+
+                    if status_filter and status_str != status_filter:
+                        continue
+
+                    attempts.append({
+                        "uuid": entry.get("uuid", ""),
+                        "seq": entry.get("seq", 0),
+                        "status": status_str,
+                        "prompt_text": self._extract_prompt_text(entry),
+                        "output_text": self._extract_output_text(entry),
+                        "all_outputs": self._extract_all_outputs(entry),
+                        "triggers": entry.get("notes", {}).get("triggers") if isinstance(entry.get("notes"), dict) else [],
+                        "detector_results": entry.get("detector_results", {}),
+                        "goal": entry.get("goal"),
+                    })
+        except Exception as e:
+            logger.error(f"Error parsing probe attempts for {scan_id}/{probe_classname}: {e}")
+            return None
+
+        metadata = get_probe_metadata(probe_classname)
+
+        total_attempts = len(attempts)
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        return {
+            "scan_id": scan_id,
+            "probe_classname": probe_classname,
+            "security": metadata,
+            "total_attempts": total_attempts,
+            "page": page,
+            "page_size": page_size,
+            "attempts": attempts[start:end],
+        }
 
     def _calculate_pass_rate(self, scan_info: Dict[str, Any]) -> float:
         passed = scan_info.get("passed", 0)
