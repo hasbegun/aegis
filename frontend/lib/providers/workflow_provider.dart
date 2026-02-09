@@ -72,9 +72,9 @@ class WorkflowNotifier extends StateNotifier<WorkflowState> {
         isLoading: false,
         lastUpdated: DateTime.now(),
       );
-    } on WorkflowNotFoundException catch (e) {
+    } on WorkflowNotFoundException {
+      // Not an error — workflow data simply doesn't exist for this scan
       state = state.copyWith(
-        error: e.message,
         isLoading: false,
       );
     } on WorkflowException catch (e) {
@@ -95,8 +95,8 @@ class WorkflowNotifier extends StateNotifier<WorkflowState> {
     try {
       final timeline = await _service.getWorkflowTimeline(_scanId);
       state = state.copyWith(timeline: timeline);
-    } on WorkflowNotFoundException catch (e) {
-      state = state.copyWith(error: e.message);
+    } on WorkflowNotFoundException {
+      // Not an error — no timeline data for this scan
     } on WorkflowException catch (e) {
       state = state.copyWith(error: e.message);
     } catch (e) {
@@ -109,8 +109,7 @@ class WorkflowNotifier extends StateNotifier<WorkflowState> {
     try {
       final data = await _service.exportWorkflow(_scanId, format);
       return data;
-    } on WorkflowNotFoundException catch (e) {
-      state = state.copyWith(error: e.message);
+    } on WorkflowNotFoundException {
       return null;
     } on WorkflowException catch (e) {
       state = state.copyWith(error: e.message);

@@ -92,6 +92,12 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
           sortOrder: sortOrder,
           status: _statusFilter,
           search: _searchQuery.isNotEmpty ? _searchQuery : null,
+          startDate: _dateRange != null
+              ? '${_dateRange!.start.year}-${_dateRange!.start.month.toString().padLeft(2, '0')}-${_dateRange!.start.day.toString().padLeft(2, '0')}'
+              : null,
+          endDate: _dateRange != null
+              ? '${_dateRange!.end.year}-${_dateRange!.end.month.toString().padLeft(2, '0')}-${_dateRange!.end.day.toString().padLeft(2, '0')}'
+              : null,
         );
 
         setState(() {
@@ -211,24 +217,9 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
   List<Map<String, dynamic>> get _filteredAndSortedScans {
     if (_scanHistory == null) return [];
 
-    // When using server-side pagination, filtering and sorting is done by the server
-    // Only apply date range filter client-side (not yet supported on server)
+    // When using server-side pagination, filtering/sorting/date range is done by the server
     if (_usePagination) {
-      var scans = _scanHistory!;
-
-      // Apply date range filter client-side (TODO: add server-side date range support)
-      if (_dateRange != null) {
-        final startOfDay = DateTime(_dateRange!.start.year, _dateRange!.start.month, _dateRange!.start.day);
-        final endOfDay = DateTime(_dateRange!.end.year, _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59);
-        scans = scans.where((scan) {
-          final startDate = DateTime.tryParse(scan['started_at'] ?? '');
-          if (startDate == null) return false;
-          return startDate.isAfter(startOfDay.subtract(const Duration(seconds: 1))) &&
-                 startDate.isBefore(endOfDay.add(const Duration(seconds: 1)));
-        }).toList();
-      }
-
-      return scans;
+      return _scanHistory!;
     }
 
     // Legacy client-side filtering and sorting
@@ -1014,6 +1005,9 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
             _dateRange = null;
           }
         });
+        if (_usePagination) {
+          _loadHistory(resetPage: true);
+        }
       },
       selectedColor: theme.colorScheme.primaryContainer,
       labelStyle: TextStyle(
@@ -1081,6 +1075,9 @@ class _ScanHistoryScreenState extends ConsumerState<ScanHistoryScreen> {
 
     if (picked != null) {
       setState(() => _dateRange = picked);
+      if (_usePagination) {
+        _loadHistory(resetPage: true);
+      }
     }
   }
 

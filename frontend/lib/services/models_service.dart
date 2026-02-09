@@ -6,7 +6,7 @@ import 'package:logger/logger.dart';
 /// Service for fetching available models for each generator type
 class ModelsService {
   final Dio _dio;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
   // Cache for model lists to avoid repeated API calls
   final Map<String, GeneratorModelsResponse> _cache = {};

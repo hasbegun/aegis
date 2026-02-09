@@ -34,7 +34,7 @@ class _ScanConnection {
 /// Service for WebSocket connections to receive real-time scan updates
 /// Supports multiple concurrent scan connections
 class WebSocketService {
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
   final String baseUrl;
   final int wsReconnectDelay;
 

@@ -31,56 +31,7 @@ class _WorkflowViewerScreenState extends ConsumerState<WorkflowViewerScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(workflowProvider(widget.scanId));
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Workflow Viewer'),
-        actions: [
-          // Refresh button
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: state.isLoading
-                ? null
-                : () {
-                    ref
-                        .read(workflowProvider(widget.scanId).notifier)
-                        .refresh();
-                  },
-            tooltip: 'Refresh',
-          ),
-          // Export button
-          if (state.hasData)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.download),
-              tooltip: 'Export',
-              onSelected: (format) => _handleExport(format),
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'json',
-                  child: Row(
-                    children: [
-                      Icon(Icons.code),
-                      SizedBox(width: 8),
-                      Text('Export as JSON'),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'mermaid',
-                  child: Row(
-                    children: [
-                      Icon(Icons.account_tree_outlined),
-                      SizedBox(width: 8),
-                      Text('Export as Mermaid'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-      body: _buildBody(state),
-    );
+    return _buildBody(state);
   }
 
   Widget _buildBody(WorkflowState state) {

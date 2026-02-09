@@ -10,7 +10,7 @@ import '../models/pagination.dart';
 /// Service for communicating with the garak backend API
 class ApiService {
   late final Dio _dio;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
   final String baseUrl;
   final int connectionTimeout;
   final int receiveTimeout;
@@ -115,6 +115,8 @@ class ApiService {
     SortOrder sortOrder = SortOrder.desc,
     String? status,
     String? search,
+    String? startDate,
+    String? endDate,
   }) async {
     try {
       final queryParams = <String, dynamic>{
@@ -130,6 +132,14 @@ class ApiService {
 
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
+      }
+
+      if (startDate != null && startDate.isNotEmpty) {
+        queryParams['start_date'] = startDate;
+      }
+
+      if (endDate != null && endDate.isNotEmpty) {
+        queryParams['end_date'] = endDate;
       }
 
       final response = await _dio.get(

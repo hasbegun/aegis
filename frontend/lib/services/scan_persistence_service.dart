@@ -8,7 +8,7 @@ import 'background_scan_service.dart';
 /// Service for persisting background scans to local storage
 class ScanPersistenceService {
   static const String _boxName = 'background_scans';
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
   Box<PersistedScan>? _box;
 
   /// Initialize Hive and open box

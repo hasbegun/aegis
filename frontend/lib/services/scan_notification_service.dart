@@ -6,7 +6,7 @@ import 'package:logger/logger.dart';
 /// Service for showing scan notifications
 class ScanNotificationService {
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
   bool _initialized = false;
 
   // Notification channels

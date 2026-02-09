@@ -56,7 +56,7 @@ class BackgroundScanService {
   final ApiService _apiService;
   final ScanPersistenceService _persistenceService;
   final ScanNotificationService _notificationService;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
 
   // Track all background scans
   final Map<String, BackgroundScan> _activeScans = {};

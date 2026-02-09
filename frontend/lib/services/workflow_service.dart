@@ -6,7 +6,7 @@ import '../models/workflow/workflow_graph.dart';
 /// Service for communicating with the workflow API endpoints
 class WorkflowService {
   late final Dio _dio;
-  final Logger _logger = Logger();
+  final Logger _logger = Logger(printer: PrettyPrinter(methodCount: 0));
   final String baseUrl;
   final int connectionTimeout;
   final int receiveTimeout;

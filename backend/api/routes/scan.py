@@ -143,6 +143,8 @@ async def get_scan_history(
     sort_order: SortOrder = Query(SortOrder.DESC, description="Sort order"),
     status: Optional[str] = Query(None, description="Filter by status (completed, running, failed, cancelled)"),
     search: Optional[str] = Query(None, description="Search by target name or scan ID"),
+    start_date: Optional[str] = Query(None, description="Filter scans started on or after this date (ISO 8601, e.g. 2026-01-15)"),
+    end_date: Optional[str] = Query(None, description="Filter scans started on or before this date (ISO 8601, e.g. 2026-02-08)"),
 ):
     """
     Get paginated list of all scans (active and completed)
@@ -154,6 +156,8 @@ async def get_scan_history(
         sort_order: Sort order (asc or desc)
         status: Optional status filter
         search: Optional search query for target name or scan ID
+        start_date: Optional start date filter (ISO 8601)
+        end_date: Optional end date filter (ISO 8601)
 
     Returns:
         Paginated list of scan information
@@ -175,6 +179,29 @@ async def get_scan_history(
             or search_lower in s.get('scan_id', '').lower()
             or search_lower in s.get('target_type', '').lower()
         ]
+
+    # Apply date range filter
+    if start_date or end_date:
+        filtered = []
+        for s in all_scans:
+            started_at = s.get('started_at', '')
+            if not started_at:
+                continue
+            try:
+                scan_date = datetime.fromisoformat(started_at)
+            except (ValueError, TypeError):
+                continue
+            if start_date:
+                start_dt = datetime.fromisoformat(start_date)
+                if scan_date < start_dt:
+                    continue
+            if end_date:
+                # Include the entire end date (up to 23:59:59)
+                end_dt = datetime.fromisoformat(end_date).replace(hour=23, minute=59, second=59)
+                if scan_date > end_dt:
+                    continue
+            filtered.append(s)
+        all_scans = filtered
 
     # Sort scans
     def get_sort_key(scan):
