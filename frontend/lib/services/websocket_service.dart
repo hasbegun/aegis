@@ -7,17 +7,21 @@ import '../models/scan_status.dart';
 
 /// Represents a single scan's WebSocket connection
 class _ScanConnection {
+  static const int maxReconnectAttempts = 3;
+
   final String scanId;
   final WebSocketChannel channel;
   final StreamController<ScanStatusInfo> controller;
   Timer? reconnectTimer;
   bool isConnected;
+  int reconnectAttempts;
 
   _ScanConnection({
     required this.scanId,
     required this.channel,
     required this.controller,
     this.isConnected = true,
+    this.reconnectAttempts = 0,
   });
 
   void dispose() {
@@ -76,6 +80,10 @@ class WebSocketService {
 
       channel.stream.listen(
         (message) {
+          // Reset reconnect counter on successful message
+          if (_connections[scanId] != null) {
+            _connections[scanId]!.reconnectAttempts = 0;
+          }
           _handleMessage(scanId, message);
         },
         onError: (error) {
@@ -160,13 +168,29 @@ class WebSocketService {
       return;
     }
 
-    _logger.i('Attempting to reconnect scan $scanId in ${wsReconnectDelay}s...');
+    if (connection.reconnectAttempts >= _ScanConnection.maxReconnectAttempts) {
+      _logger.w('Max reconnect attempts reached for scan $scanId. Giving up.');
+      if (!connection.controller.isClosed) {
+        connection.controller.addError(
+          'Connection lost: backend is not reachable',
+        );
+      }
+      disconnectScan(scanId);
+      return;
+    }
+
+    connection.reconnectAttempts++;
+    _logger.i(
+      'Reconnect attempt ${connection.reconnectAttempts}/${_ScanConnection.maxReconnectAttempts} '
+      'for scan $scanId in ${wsReconnectDelay}s...',
+    );
 
     connection.reconnectTimer = Timer(
       Duration(seconds: wsReconnectDelay),
       () {
         final conn = _connections[scanId];
         if (conn != null && !conn.isConnected) {
+          conn.reconnectTimer = null;
           // Dispose old channel
           conn.channel.sink.close();
 

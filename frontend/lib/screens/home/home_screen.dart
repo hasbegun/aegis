@@ -6,6 +6,7 @@ import '../../config/constants.dart';
 import '../../utils/keyboard_shortcuts.dart';
 import '../../widgets/background_scans_indicator.dart';
 import '../../providers/api_provider.dart';
+import '../../services/api_service.dart';
 import '../../providers/background_scans_provider.dart';
 import '../configuration/model_selection_screen.dart';
 import '../browse/browse_probes_screen.dart';
@@ -26,6 +27,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<Map<String, dynamic>>? _recentScans;
   bool _isLoadingRecentScans = true;
+  bool _connectionFailed = false;
+  bool _isRetrying = false;
 
   @override
   void initState() {
@@ -49,16 +52,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         setState(() {
           _recentScans = history.take(5).toList();
           _isLoadingRecentScans = false;
+          _connectionFailed = false;
+          _isRetrying = false;
         });
       }
     } catch (e) {
       if (mounted) {
+        // If we got an HTTP status code, the server is reachable (just an API error).
+        // Everything else (no response at all) means the server is unreachable.
+        final hasHttpResponse = e is ApiException && e.statusCode != null;
         setState(() {
           _recentScans = [];
           _isLoadingRecentScans = false;
+          _connectionFailed = !hasHttpResponse;
+          _isRetrying = false;
         });
       }
     }
+  }
+
+  Future<void> _retryConnection() async {
+    setState(() {
+      _isRetrying = true;
+      _isLoadingRecentScans = true;
+    });
+    await _loadRecentScans();
   }
 
   void _navigateToNewScan() {
@@ -171,6 +189,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               );
             },
           ),
+          if (_connectionFailed)
+            IconButton(
+              icon: _isRetrying
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.error,
+                      ),
+                    )
+                  : Icon(Icons.refresh, color: colorScheme.error),
+              onPressed: _isRetrying ? null : _retryConnection,
+              tooltip: 'Reconnect to server',
+            ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: _navigateToSettings,
@@ -196,6 +229,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   // Welcome Section
                   _buildWelcomeCard(context),
                   const SizedBox(height: AppConstants.largePadding),
+
+                  // Connection error banner
+                  if (_connectionFailed) ...[
+                    _buildConnectionErrorBanner(context),
+                    const SizedBox(height: AppConstants.defaultPadding),
+                  ],
 
                   // Actions
                   Text(
@@ -234,6 +273,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       //   label: const Text('New Scan'),
       // ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionErrorBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      color: colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_off, color: colorScheme.onErrorContainer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cannot connect to server',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Make sure the backend is running and reachable.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onErrorContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonalIcon(
+              onPressed: _isRetrying ? null : _retryConnection,
+              icon: _isRetrying
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.onErrorContainer,
+                      ),
+                    )
+                  : const Icon(Icons.refresh, size: 18),
+              label: Text(_isRetrying ? 'Retrying...' : 'Retry'),
+            ),
+          ],
         ),
       ),
     );
@@ -501,73 +594,97 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildQuickActions(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: AppConstants.defaultPadding,
-      crossAxisSpacing: AppConstants.defaultPadding,
-      childAspectRatio: 1.5,
-      children: [
-        _buildActionCard(
-          context,
-          title: l10n.scan,
-          subtitle: l10n.startNewScan,
-          icon: Icons.play_circle_outline,
-          shortcutHint: '${KeyboardShortcuts.modifierKey}+N',
-          onTap: _navigateToNewScan,
-        ),
-        _buildActionCard(
-          context,
-          title: l10n.browseProbesAction,
-          subtitle: l10n.viewAllTests,
-          icon: Icons.list_alt,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const BrowseProbesScreen(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - AppConstants.defaultPadding) / 2;
+        final cardHeight = cardWidth / 1.5;
+
+        return Wrap(
+          alignment: WrapAlignment.center,
+          spacing: AppConstants.defaultPadding,
+          runSpacing: AppConstants.defaultPadding,
+          children: [
+            SizedBox(
+              width: cardWidth,
+              height: cardHeight,
+              child: _buildActionCard(
+                context,
+                title: l10n.scan,
+                subtitle: l10n.startNewScan,
+                icon: Icons.play_circle_outline,
+                shortcutHint: '${KeyboardShortcuts.modifierKey}+N',
+                onTap: _navigateToNewScan,
               ),
-            );
-          },
-        ),
-        _buildActionCard(
-          context,
-          title: l10n.writeProbe,
-          subtitle: l10n.createCustomProbe,
-          icon: Icons.code,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const WriteProbeScreen(),
+            ),
+            SizedBox(
+              width: cardWidth,
+              height: cardHeight,
+              child: _buildActionCard(
+                context,
+                title: l10n.browseProbesAction,
+                subtitle: l10n.viewAllTests,
+                icon: Icons.list_alt,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const BrowseProbesScreen(),
+                    ),
+                  );
+                },
               ),
-            );
-          },
-        ),
-        _buildActionCard(
-          context,
-          title: l10n.myProbes,
-          subtitle: l10n.manageSavedProbes,
-          icon: Icons.folder_special,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ManageProbesScreen(),
+            ),
+            SizedBox(
+              width: cardWidth,
+              height: cardHeight,
+              child: _buildActionCard(
+                context,
+                title: l10n.writeProbe,
+                subtitle: l10n.createCustomProbe,
+                icon: Icons.code,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const WriteProbeScreen(),
+                    ),
+                  );
+                },
               ),
-            );
-          },
-        ),
-        _buildActionCard(
-          context,
-          title: l10n.history,
-          subtitle: l10n.pastScans,
-          icon: Icons.history,
-          shortcutHint: '${KeyboardShortcuts.modifierKey}+H',
-          onTap: _navigateToHistory,
-        ),
-      ],
+            ),
+            SizedBox(
+              width: cardWidth,
+              height: cardHeight,
+              child: _buildActionCard(
+                context,
+                title: l10n.myProbes,
+                subtitle: l10n.manageSavedProbes,
+                icon: Icons.folder_special,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ManageProbesScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            SizedBox(
+              width: cardWidth,
+              height: cardHeight,
+              child: _buildActionCard(
+                context,
+                title: l10n.history,
+                subtitle: l10n.pastScans,
+                icon: Icons.history,
+                shortcutHint: '${KeyboardShortcuts.modifierKey}+H',
+                onTap: _navigateToHistory,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

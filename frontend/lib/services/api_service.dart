@@ -352,6 +352,8 @@ class ApiException implements Exception {
           'Server error: ${error.response?.statusCode}';
     } else if (error.type == DioExceptionType.cancel) {
       message = 'Request cancelled';
+    } else if (error.type == DioExceptionType.connectionError) {
+      message = 'Connection refused. Is the backend running?';
     } else {
       message = error.message ?? 'Unknown error occurred';
     }
