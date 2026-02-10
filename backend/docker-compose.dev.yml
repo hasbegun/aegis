@@ -1,6 +1,6 @@
 # Docker Compose Development Override
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-# Or simply: make compose-dev
+# Or simply: make aegis-dev
 
 version: '3.8'
 

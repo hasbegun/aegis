@@ -374,9 +374,9 @@ docker-compose down
 Or use the Makefile shortcuts:
 
 ```bash
-make compose-up       # Start
-make compose-logs     # View logs
-make compose-down     # Stop
+make aegis-up       # Start
+make aegis-logs     # View logs
+make aegis-down     # Stop
 ```
 
 ### Production Configuration

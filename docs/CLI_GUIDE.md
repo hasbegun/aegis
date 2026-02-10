@@ -9,10 +9,10 @@ Start the services first:
 ```bash
 # Development mode (hot reload)
 cd backend
-make compose-dev
+make aegis-dev
 
 # Or production mode (with Ollama container)
-make compose-prod
+make aegis-prod
 ```
 
 ---
@@ -76,7 +76,7 @@ Expected:
 
 ```bash
 make health          # Backend health
-make garak-health    # Garak service health (via backend container)
+make aegis-garak-health    # Garak service health (via backend container)
 ```
 
 ---
@@ -477,28 +477,28 @@ curl -s http://localhost:8888/api/v1/scan/{scan_id}/report/detailed
 
 | Command | Description |
 |---------|-------------|
-| `make compose-dev` | Start dev mode (hot reload, local Ollama) |
-| `make compose-dev-down` | Stop dev mode |
-| `make compose-dev-logs` | Follow dev mode logs |
-| `make compose-dev-restart` | Restart dev services |
-| `make compose-up` | Start default mode (detached) |
-| `make compose-up-build` | Build and start |
-| `make compose-down` | Stop services |
-| `make compose-down-v` | Stop and remove volumes |
-| `make compose-prod` | Start prod mode (backend + garak + ollama) |
-| `make compose-prod-down` | Stop prod mode |
-| `make compose-prod-logs` | Follow prod mode logs |
+| `make aegis-dev` | Start dev mode (hot reload, local Ollama) |
+| `make aegis-dev-down` | Stop dev mode |
+| `make aegis-dev-logs` | Follow dev mode logs |
+| `make aegis-dev-restart` | Restart dev services |
+| `make aegis-up` | Start default mode (detached) |
+| `make aegis-up-build` | Build and start |
+| `make aegis-down` | Stop services |
+| `make aegis-down-v` | Stop and remove volumes |
+| `make aegis-prod` | Start prod mode (backend + garak + ollama) |
+| `make aegis-prod-down` | Stop prod mode |
+| `make aegis-prod-logs` | Follow prod mode logs |
 
 ### Debugging
 
 | Command | Description |
 |---------|-------------|
-| `make compose-logs` | Follow all service logs |
-| `make compose-ps` | List running services |
-| `make compose-config` | Validate and view compose config |
-| `make garak-shell` | Shell into garak container |
-| `make garak-logs` | Follow garak service logs |
-| `make garak-health` | Check garak service health |
+| `make aegis-logs` | Follow all service logs |
+| `make aegis-ps` | List running services |
+| `make aegis-config` | Validate and view compose config |
+| `make aegis-garak-shell` | Shell into garak container |
+| `make aegis-garak-logs` | Follow garak service logs |
+| `make aegis-garak-health` | Check garak service health |
 | `make docker-status` | Show container status |
 
 ### Direct Docker Compose
@@ -607,7 +607,7 @@ Run these commands in sequence to verify the full stack is working:
 ```bash
 # 1. Start services
 cd backend
-make compose-dev
+make aegis-dev
 
 # 2. Wait for services to be ready
 sleep 10
@@ -649,13 +649,13 @@ The backend cannot reach the garak service. Check:
 
 ```bash
 # Are both containers running?
-make compose-ps
+make aegis-ps
 
 # Check garak container logs
-make garak-logs
+make aegis-garak-logs
 
 # Test garak health from inside the network
-make garak-health
+make aegis-garak-health
 ```
 
 ### Scan starts but no progress
@@ -663,7 +663,7 @@ make garak-health
 Check garak service logs for subprocess errors:
 
 ```bash
-make garak-logs
+make aegis-garak-logs
 ```
 
 Common causes:
