@@ -1,4 +1,4 @@
-.PHONY: help test clean check-env health \
+.PHONY: help test test-cli clean check-env health \
         aegis-up aegis-down aegis-restart aegis-logs aegis-ps aegis-pull aegis-build \
         aegis-dev aegis-dev-down aegis-dev-logs aegis-dev-restart aegis-dev-attach \
         aegis-prod aegis-prod-down aegis-prod-logs \
@@ -25,6 +25,11 @@ help: ## Show this help message
 test: ## Run tests inside backend container
 	@echo "$(BLUE)Running tests...$(NC)"
 	$(DOCKER_COMPOSE) exec backend python -m pytest tests/ -v || echo "$(YELLOW)No tests found$(NC)"
+
+test-cli: ## Run CLI flag tests locally (no container needed)
+	@echo "$(BLUE)Running CLI flag tests...$(NC)"
+	python3 -m pytest tests/test_cli_flags.py -v
+	@echo "$(GREEN)✓ CLI flag tests passed$(NC)"
 
 clean: ## Clean up Python cache files
 	@echo "$(BLUE)Cleaning up...$(NC)"

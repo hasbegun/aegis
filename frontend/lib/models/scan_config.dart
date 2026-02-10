@@ -95,6 +95,14 @@ class ScanConfig {
   @JsonKey(name: 'timeout_per_probe')
   final int? timeoutPerProbe;
 
+  // Report threshold
+  @JsonKey(name: 'report_threshold')
+  final double? reportThreshold;
+
+  // Collect timing
+  @JsonKey(name: 'collect_timing')
+  final bool collectTiming;
+
   const ScanConfig({
     required this.targetType,
     required this.targetName,
@@ -122,6 +130,8 @@ class ScanConfig {
     this.excludeProbes,
     this.excludeDetectors,
     this.timeoutPerProbe,
+    this.reportThreshold,
+    this.collectTiming = false,
   });
 
   factory ScanConfig.fromJson(Map<String, dynamic> json) =>
@@ -156,6 +166,8 @@ class ScanConfig {
     String? excludeProbes,
     String? excludeDetectors,
     int? timeoutPerProbe,
+    double? reportThreshold,
+    bool? collectTiming,
   }) {
     return ScanConfig(
       targetType: targetType ?? this.targetType,
@@ -184,6 +196,8 @@ class ScanConfig {
       excludeProbes: excludeProbes ?? this.excludeProbes,
       excludeDetectors: excludeDetectors ?? this.excludeDetectors,
       timeoutPerProbe: timeoutPerProbe ?? this.timeoutPerProbe,
+      reportThreshold: reportThreshold ?? this.reportThreshold,
+      collectTiming: collectTiming ?? this.collectTiming,
     );
   }
 }

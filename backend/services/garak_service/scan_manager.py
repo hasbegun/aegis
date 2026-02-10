@@ -265,6 +265,12 @@ class ScanManager:
         if config.get("timeout_per_probe") is not None:
             cmd.extend(["--timeout_per_probe", str(config["timeout_per_probe"])])
 
+        if config.get("report_threshold") is not None:
+            cmd.extend(["--report_threshold", str(config["report_threshold"])])
+
+        if config.get("collect_timing"):
+            cmd.append("--collect_timing")
+
         detectors = config.get("detectors", [])
         if detectors:
             cleaned = [

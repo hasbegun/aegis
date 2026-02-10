@@ -136,6 +136,20 @@ class ScanConfigRequest(BaseModel):
         description="Timeout in seconds for each probe (1-3600)"
     )
 
+    # Report threshold
+    report_threshold: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Only report results above this threshold (0.0-1.0)"
+    )
+
+    # Collect timing
+    collect_timing: bool = Field(
+        default=False,
+        description="Collect timing metrics for each probe"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {

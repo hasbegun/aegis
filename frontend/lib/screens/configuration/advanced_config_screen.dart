@@ -34,6 +34,8 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   bool _noReport = false;
   bool _continueOnError = false;
   int? _timeoutPerProbe;
+  double? _reportThreshold;
+  bool _collectTiming = false;
   final TextEditingController _seedController = TextEditingController();
   final TextEditingController _parallelRequestsController = TextEditingController();
   final TextEditingController _parallelAttemptsController = TextEditingController();
@@ -71,6 +73,8 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
         _noReport != false ||
         _continueOnError != false ||
         _timeoutPerProbe != null ||
+        _reportThreshold != null ||
+        _collectTiming != false ||
         _systemPromptController.text.isNotEmpty ||
         _reportPrefixController.text.isNotEmpty ||
         _outputDirController.text.isNotEmpty ||
@@ -167,6 +171,14 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
       ref.read(scanConfigProvider.notifier).setTimeoutPerProbe(_timeoutPerProbe);
     }
 
+    // Apply report threshold
+    if (_reportThreshold != null) {
+      ref.read(scanConfigProvider.notifier).setReportThreshold(_reportThreshold);
+    }
+
+    // Apply collect timing
+    ref.read(scanConfigProvider.notifier).setCollectTiming(_collectTiming);
+
     // Navigate to scan execution
     Navigator.push(
       context,
@@ -220,6 +232,8 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
           ? _excludeDetectorsController.text
           : config.excludeDetectors,
       timeoutPerProbe: _timeoutPerProbe ?? config.timeoutPerProbe,
+      reportThreshold: _reportThreshold ?? config.reportThreshold,
+      collectTiming: _collectTiming,
     );
 
     try {
@@ -762,6 +776,49 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Report Threshold
+            Row(
+              children: [
+                Icon(Icons.filter_alt, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Report Threshold',
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const Spacer(),
+                Text(
+                  _reportThreshold == null
+                      ? 'Default'
+                      : _reportThreshold!.toStringAsFixed(2),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: (_reportThreshold ?? 0).toDouble(),
+              min: 0,
+              max: 1.0,
+              divisions: 20,
+              label: _reportThreshold == null || _reportThreshold == 0
+                  ? 'Default'
+                  : _reportThreshold!.toStringAsFixed(2),
+              onChanged: (value) {
+                setState(() {
+                  _reportThreshold = value == 0 ? null : value;
+                });
+              },
+            ),
+            Text(
+              'Only report results above this threshold (0 = report all)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Extended Detectors Toggle
             SwitchListTile(
               title: const Text('Extended Detectors'),
@@ -838,6 +895,16 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
               value: _continueOnError,
               onChanged: (value) => setState(() => _continueOnError = value),
               secondary: const Icon(Icons.play_arrow),
+              contentPadding: EdgeInsets.zero,
+            ),
+
+            // Collect Timing Toggle
+            SwitchListTile(
+              title: const Text('Collect Timing'),
+              subtitle: const Text('Record timing metrics for each probe'),
+              value: _collectTiming,
+              onChanged: (value) => setState(() => _collectTiming = value),
+              secondary: const Icon(Icons.speed),
               contentPadding: EdgeInsets.zero,
             ),
 

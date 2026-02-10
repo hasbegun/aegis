@@ -35,6 +35,8 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
       excludeProbes: state?.excludeProbes,
       excludeDetectors: state?.excludeDetectors,
       timeoutPerProbe: state?.timeoutPerProbe,
+      reportThreshold: state?.reportThreshold,
+      collectTiming: state?.collectTiming ?? false,
     );
   }
 
@@ -180,6 +182,18 @@ class ScanConfigNotifier extends StateNotifier<ScanConfig?> {
   void setTimeoutPerProbe(int? value) {
     if (state == null) return;
     state = state!.copyWith(timeoutPerProbe: value);
+  }
+
+  /// Set report threshold
+  void setReportThreshold(double? value) {
+    if (state == null) return;
+    state = state!.copyWith(reportThreshold: value);
+  }
+
+  /// Set collect timing
+  void setCollectTiming(bool value) {
+    if (state == null) return;
+    state = state!.copyWith(collectTiming: value);
   }
 
   /// Set entire configuration (used when resuming from background)
