@@ -594,6 +594,11 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                 if (textEditingValue.text.isEmpty) {
                   return models;
                 }
+                // If text exactly matches a model ID (auto-populated or just
+                // selected), show all models instead of filtering
+                if (models.any((m) => m.id == textEditingValue.text)) {
+                  return models;
+                }
                 return models.where((model) {
                   final searchLower = textEditingValue.text.toLowerCase();
                   return model.id.toLowerCase().contains(searchLower) ||
@@ -601,7 +606,7 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                       model.description.toLowerCase().contains(searchLower);
                 });
               },
-              displayStringForOption: (GeneratorModel option) => option.name,
+              displayStringForOption: (GeneratorModel option) => option.id,
               fieldViewBuilder: (
                 BuildContext context,
                 TextEditingController controller,
@@ -613,8 +618,8 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                   // Set initial value to first recommended model if available
                   final recommended = models.where((m) => m.recommended).toList();
                   if (recommended.isNotEmpty && _modelNameController.text.isEmpty) {
-                    _modelNameController.text = recommended.first.name;
-                    controller.text = recommended.first.name;
+                    _modelNameController.text = recommended.first.id;
+                    controller.text = recommended.first.id;
                     _selectedModelId = recommended.first.id;
                   }
                 }
@@ -716,7 +721,7 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
               },
               onSelected: (GeneratorModel selection) {
                 setState(() {
-                  _modelNameController.text = selection.name;
+                  _modelNameController.text = selection.id;
                   _selectedModelId = selection.id;
                 });
               },
@@ -761,12 +766,12 @@ class _ModelSelectionScreenState extends ConsumerState<ModelSelectionScreen> {
                   .where((m) => m.recommended)
                   .map((model) => ActionChip(
                         avatar: const Icon(Icons.star, size: 16),
-                        label: Text(model.name),
+                        label: Text(model.id),
                         labelStyle: theme.textTheme.labelSmall,
                         visualDensity: VisualDensity.compact,
                         onPressed: () {
                           setState(() {
-                            _modelNameController.text = model.name;
+                            _modelNameController.text = model.id;
                             _selectedModelId = model.id;
                           });
                         },
