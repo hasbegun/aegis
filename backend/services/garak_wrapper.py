@@ -6,6 +6,7 @@ spawning local subprocesses.
 import asyncio
 import json
 import logging
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -19,14 +20,20 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Default TTL for report cache (seconds)
+REPORT_CACHE_TTL = 300  # 5 minutes
+
 
 class GarakWrapper:
     """HTTP client for the garak container service."""
 
-    def __init__(self, garak_service_url: Optional[str] = None):
+    def __init__(self, garak_service_url: Optional[str] = None, cache_ttl: int = REPORT_CACHE_TTL):
         self.garak_service_url = garak_service_url or settings.garak_service_url
         self.active_scans: Dict[str, Dict[str, Any]] = {}
         self.garak_reports_dir = settings.garak_reports_path
+        # Report cache: scan_id → {"entries": [...], "mtime": float, "cached_at": float}
+        self._report_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ttl = cache_ttl
         logger.info(f"Garak service URL: {self.garak_service_url}")
         logger.info(f"Garak reports directory: {self.garak_reports_dir}")
 
@@ -220,10 +227,16 @@ class GarakWrapper:
 
         elif etype == "report":
             rtype = event.get("report_type")
+            original_path = event.get("path")
+            if original_path:
+                renamed = self._rename_report_file(scan_id, original_path, rtype)
+                final_path = renamed or original_path
+            else:
+                final_path = None
             if rtype == "html":
-                scan_info["html_report_path"] = event.get("path")
+                scan_info["html_report_path"] = final_path
             elif rtype == "jsonl":
-                scan_info["jsonl_report_path"] = event.get("path")
+                scan_info["jsonl_report_path"] = final_path
 
         elif etype == "complete":
             scan_info["status"] = ScanStatus.COMPLETED
@@ -252,6 +265,46 @@ class GarakWrapper:
             "cancelled": ScanStatus.CANCELLED,
         }
         return mapping.get(status_str, ScanStatus.PENDING)
+
+    def _rename_report_file(self, scan_id: str, original_path: str, report_type: str) -> Optional[str]:
+        """Rename a garak report file to use our scan_id.
+
+        Garak generates its own UUID for filenames (e.g. garak.{garak_uuid}.report.jsonl).
+        We rename to garak.{our_scan_id}.report.jsonl so all lookups by scan_id work.
+        Also renames the hitlog file if found alongside the jsonl.
+        """
+        src = Path(original_path)
+        if not src.exists():
+            logger.warning(f"Report file not found for rename: {original_path}")
+            return None
+
+        ext_map = {"html": "report.html", "jsonl": "report.jsonl"}
+        suffix = ext_map.get(report_type)
+        if not suffix:
+            return None
+
+        dst = src.parent / f"garak.{scan_id}.{suffix}"
+
+        if src == dst:
+            return str(dst)
+
+        try:
+            src.rename(dst)
+            logger.info(f"Renamed report: {src.name} -> {dst.name}")
+
+            # Also rename the hitlog if this is the jsonl report
+            if report_type == "jsonl":
+                garak_uuid = src.stem.replace("garak.", "").replace(".report", "")
+                hitlog_src = src.parent / f"garak.{garak_uuid}.hitlog.jsonl"
+                if hitlog_src.exists():
+                    hitlog_dst = src.parent / f"garak.{scan_id}.hitlog.jsonl"
+                    hitlog_src.rename(hitlog_dst)
+                    logger.info(f"Renamed hitlog: {hitlog_src.name} -> {hitlog_dst.name}")
+
+            return str(dst)
+        except Exception as e:
+            logger.error(f"Error renaming report file {src} -> {dst}: {e}")
+            return None
 
     async def cancel_scan(self, scan_id: str) -> bool:
         """Cancel a scan via the garak service."""
@@ -303,6 +356,9 @@ class GarakWrapper:
 
     def delete_scan(self, scan_id: str) -> bool:
         """Delete a scan and all its associated reports."""
+        # Invalidate cache
+        self.invalidate_cache(scan_id)
+
         # Remove from active scans
         if scan_id in self.active_scans:
             scan_info = self.active_scans[scan_id]
@@ -367,16 +423,75 @@ class GarakWrapper:
 
         return sorted(all_scans, key=lambda x: x.get("started_at", ""), reverse=True)
 
-    def _parse_report_file(self, report_file: Path, scan_id: str) -> Optional[Dict[str, Any]]:
-        """Parse a garak report.jsonl file to extract scan information."""
+    # ------------------------------------------------------------------
+    # Report cache
+    # ------------------------------------------------------------------
+
+    def _get_report_entries(self, scan_id: str) -> Optional[List[dict]]:
+        """Get parsed JSONL entries for a scan, using cache when valid.
+
+        Cache is invalidated when:
+        - File mtime changes (file was rewritten)
+        - TTL expires
+        - invalidate_cache() is called (e.g. on delete)
+        """
+        report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
+        if not report_file.exists():
+            return None
+
+        try:
+            file_mtime = report_file.stat().st_mtime
+        except OSError:
+            return None
+
+        now = time.monotonic()
+        cached = self._report_cache.get(scan_id)
+        if (
+            cached
+            and cached["mtime"] == file_mtime
+            and (now - cached["cached_at"]) < self._cache_ttl
+        ):
+            return cached["entries"]
+
+        # Parse file
+        entries: List[dict] = []
         try:
             with open(report_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+                for line in f:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            logger.error(f"Error reading report file for {scan_id}: {e}")
+            return None
 
-            if not lines:
-                return None
+        self._report_cache[scan_id] = {
+            "entries": entries,
+            "mtime": file_mtime,
+            "cached_at": now,
+        }
+        return entries
 
-            first_entry = json.loads(lines[0])
+    def invalidate_cache(self, scan_id: str):
+        """Remove cached report data for a scan."""
+        self._report_cache.pop(scan_id, None)
+
+    def clear_cache(self):
+        """Remove all cached report data."""
+        self._report_cache.clear()
+
+    def _parse_report_file(self, report_file: Path, scan_id: str) -> Optional[Dict[str, Any]]:
+        """Parse a garak report.jsonl file to extract scan information.
+
+        Uses cached JSONL entries when available.
+        """
+        entries = self._get_report_entries(scan_id)
+        if not entries:
+            return None
+
+        try:
+            first_entry = entries[0]
 
             scan_info = {
                 "scan_id": scan_id,
@@ -397,20 +512,16 @@ class GarakWrapper:
 
             scan_info["jsonl_report_path"] = str(report_file)
 
-            for line in lines:
-                try:
-                    entry = json.loads(line)
-                    entry_type = entry.get("entry_type")
-                    if entry_type == "attempt" and entry.get("status") in [1, 2]:
-                        scan_info["total_tests"] += 1
-                        if entry["status"] == 2:
-                            scan_info["passed"] += 1
-                        elif entry["status"] == 1:
-                            scan_info["failed"] += 1
-                    elif entry_type == "digest":
-                        scan_info["digest"] = entry.get("eval", {})
-                except json.JSONDecodeError:
-                    continue
+            for entry in entries:
+                entry_type = entry.get("entry_type")
+                if entry_type == "attempt" and entry.get("status") in [1, 2]:
+                    scan_info["total_tests"] += 1
+                    if entry["status"] == 2:
+                        scan_info["passed"] += 1
+                    elif entry["status"] == 1:
+                        scan_info["failed"] += 1
+                elif entry_type == "digest":
+                    scan_info["digest"] = entry.get("eval", {})
 
             if not scan_info["started_at"]:
                 file_mtime = datetime.fromtimestamp(report_file.stat().st_mtime)
@@ -519,55 +630,43 @@ class GarakWrapper:
         page: int = 1,
         page_size: int = 50,
     ) -> Optional[Dict[str, Any]]:
-        """Parse JSONL report and return per-probe breakdown with security context."""
+        """Parse JSONL report and return per-probe breakdown with security context.
+
+        Uses cached JSONL entries when available.
+        """
         from services.probe_knowledge import get_probe_metadata
 
-        report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
-        if not report_file.exists():
+        entries = self._get_report_entries(scan_id)
+        if entries is None:
             return None
 
         probes_data: Dict[str, Dict[str, Any]] = {}
-        digest_data = None
 
-        try:
-            with open(report_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+        for entry in entries:
+            etype = entry.get("entry_type")
 
-                    etype = entry.get("entry_type")
+            if etype == "attempt":
+                probe = entry.get("probe_classname", "unknown")
+                if probe not in probes_data:
+                    probes_data[probe] = {
+                        "passed": 0,
+                        "failed": 0,
+                        "goal": entry.get("goal"),
+                    }
+                status = entry.get("status")
+                if status == 2:
+                    probes_data[probe]["passed"] += 1
+                elif status == 1:
+                    probes_data[probe]["failed"] += 1
 
-                    if etype == "attempt":
-                        probe = entry.get("probe_classname", "unknown")
-                        if probe not in probes_data:
-                            probes_data[probe] = {
-                                "passed": 0,
-                                "failed": 0,
-                                "goal": entry.get("goal"),
-                            }
-                        status = entry.get("status")
-                        if status == 2:
-                            probes_data[probe]["passed"] += 1
-                        elif status == 1:
-                            probes_data[probe]["failed"] += 1
-
-                    elif etype == "eval":
-                        probe = entry.get("probe")
-                        if probe and probe in probes_data:
-                            probes_data[probe]["eval"] = {
-                                "detector": entry.get("detector"),
-                                "passed": entry.get("passed"),
-                                "total": entry.get("total"),
-                            }
-
-                    elif etype == "digest":
-                        digest_data = entry.get("eval", {})
-
-        except Exception as e:
-            logger.error(f"Error parsing probe details for {scan_id}: {e}")
-            return None
+            elif etype == "eval":
+                probe = entry.get("probe")
+                if probe and probe in probes_data:
+                    probes_data[probe]["eval"] = {
+                        "detector": entry.get("detector"),
+                        "passed": entry.get("passed"),
+                        "total": entry.get("total"),
+                    }
 
         # Build response with knowledge base enrichment
         probe_results = []
@@ -621,47 +720,40 @@ class GarakWrapper:
         page: int = 1,
         page_size: int = 20,
     ) -> Optional[Dict[str, Any]]:
-        """Get individual test attempts for a specific probe."""
+        """Get individual test attempts for a specific probe.
+
+        Uses cached JSONL entries when available.
+        """
         from services.probe_knowledge import get_probe_metadata
 
-        report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
-        if not report_file.exists():
+        entries = self._get_report_entries(scan_id)
+        if entries is None:
             return None
 
         attempts = []
-        try:
-            with open(report_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+        for entry in entries:
+            if entry.get("entry_type") != "attempt":
+                continue
+            if entry.get("probe_classname") != probe_classname:
+                continue
 
-                    if entry.get("entry_type") != "attempt":
-                        continue
-                    if entry.get("probe_classname") != probe_classname:
-                        continue
+            status_val = entry.get("status")
+            status_str = "failed" if status_val == 1 else "passed" if status_val == 2 else "unknown"
 
-                    status_val = entry.get("status")
-                    status_str = "failed" if status_val == 1 else "passed" if status_val == 2 else "unknown"
+            if status_filter and status_str != status_filter:
+                continue
 
-                    if status_filter and status_str != status_filter:
-                        continue
-
-                    attempts.append({
-                        "uuid": entry.get("uuid", ""),
-                        "seq": entry.get("seq", 0),
-                        "status": status_str,
-                        "prompt_text": self._extract_prompt_text(entry),
-                        "output_text": self._extract_output_text(entry),
-                        "all_outputs": self._extract_all_outputs(entry),
-                        "triggers": entry.get("notes", {}).get("triggers") if isinstance(entry.get("notes"), dict) else [],
-                        "detector_results": entry.get("detector_results", {}),
-                        "goal": entry.get("goal"),
-                    })
-        except Exception as e:
-            logger.error(f"Error parsing probe attempts for {scan_id}/{probe_classname}: {e}")
-            return None
+            attempts.append({
+                "uuid": entry.get("uuid", ""),
+                "seq": entry.get("seq", 0),
+                "status": status_str,
+                "prompt_text": self._extract_prompt_text(entry),
+                "output_text": self._extract_output_text(entry),
+                "all_outputs": self._extract_all_outputs(entry),
+                "triggers": entry.get("notes", {}).get("triggers") if isinstance(entry.get("notes"), dict) else [],
+                "detector_results": entry.get("detector_results", {}),
+                "goal": entry.get("goal"),
+            })
 
         metadata = get_probe_metadata(probe_classname)
 

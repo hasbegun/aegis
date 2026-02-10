@@ -38,6 +38,8 @@ services:
       - ./models:/app/models:cached
       - ./config.py:/app/config.py:cached
       - ./main.py:/app/main.py:cached
+      # Mount tests for `make test`
+      - ./tests:/app/tests:cached
       # Bind mount for reports in dev (easier to inspect)
       - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
 
