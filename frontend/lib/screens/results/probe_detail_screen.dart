@@ -27,6 +27,11 @@ class _ProbeDetailScreenState extends ConsumerState<ProbeDetailScreen>
   String? _statusFilter;
   late TabController _tabController;
 
+  // Stable counts from the initial unfiltered load
+  int? _totalCount;
+  int? _failedCount;
+  int? _passedCount;
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +66,14 @@ class _ProbeDetailScreenState extends ConsumerState<ProbeDetailScreen>
         status: statusFilter,
         pageSize: 100,
       );
+
+      // Capture stable counts from the initial unfiltered load
+      if (statusFilter == null) {
+        final attempts = result['attempts'] as List? ?? [];
+        _totalCount = result['total_attempts'] as int? ?? attempts.length;
+        _failedCount = attempts.where((a) => a['status'] == 'failed').length;
+        _passedCount = attempts.where((a) => a['status'] == 'passed').length;
+      }
 
       setState(() {
         _data = result;
@@ -129,13 +142,12 @@ class _ProbeDetailScreenState extends ConsumerState<ProbeDetailScreen>
   }
 
   String _getTabCount(String? filter) {
-    if (_data == null) return '';
-    final attempts = _data!['attempts'] as List? ?? [];
-    if (filter == null) return ' (${_data!['total_attempts'] ?? attempts.length})';
-    // Count is only accurate when showing "All"
-    if (_statusFilter == null) {
-      final count = attempts.where((a) => a['status'] == filter).length;
-      return ' ($count)';
+    if (filter == null) {
+      return _totalCount != null ? ' ($_totalCount)' : '';
+    } else if (filter == 'failed') {
+      return _failedCount != null ? ' ($_failedCount)' : '';
+    } else if (filter == 'passed') {
+      return _passedCount != null ? ' ($_passedCount)' : '';
     }
     return '';
   }
