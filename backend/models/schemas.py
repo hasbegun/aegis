@@ -528,7 +528,7 @@ class ProbeDetailsResponse(BaseModel):
 class AttemptDetail(BaseModel):
     """Individual test attempt detail"""
     uuid: str = Field(default="", description="Attempt UUID")
-    seq: int = Field(default=0, description="Sequence number")
+    seq: Optional[int] = Field(default=None, description="Sequence number")
     status: str = Field(..., description="Attempt status (passed, failed, unknown)")
     prompt_text: str = Field(default="", description="Prompt text sent to the model")
     output_text: str = Field(default="", description="First model output")

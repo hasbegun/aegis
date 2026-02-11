@@ -2,8 +2,6 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 # Or simply: make aegis-dev
 
-version: '3.8'
-
 services:
   backend:
     command: >

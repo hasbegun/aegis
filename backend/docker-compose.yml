@@ -1,10 +1,11 @@
-version: '3.8'
+name: aegis
 
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+    image: aegis-backend
     container_name: aegis-backend
     ports:
       - "${PORT:-8888}:8888"
@@ -41,6 +42,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.garak
+    image: aegis-garak
     container_name: aegis-garak
     environment:
       GARAK_REPORTS_DIR: "/data/garak_reports"
