@@ -94,29 +94,42 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
       );
     }
 
-    return InteractiveViewer(
-      constrained: false,
-      boundaryMargin: const EdgeInsets.all(100),
-      minScale: 0.1,
-      maxScale: 5.0,
-      child: GraphView(
-        graph: graph,
-        algorithm: BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
-        paint: Paint()
-          ..color = Theme.of(context).colorScheme.primary
-          ..strokeWidth = 2
-          ..style = PaintingStyle.stroke,
-        builder: (Node node) {
-          final nodeId = node.key!.value as String;
-          final workflowNode = widget.graph.getNodeById(nodeId);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return InteractiveViewer(
+          constrained: false,
+          boundaryMargin: const EdgeInsets.all(100),
+          minScale: 0.1,
+          maxScale: 5.0,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: constraints.maxWidth,
+              minHeight: constraints.maxHeight,
+            ),
+            child: Center(
+              child: GraphView(
+                graph: graph,
+                algorithm:
+                    BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
+                paint: Paint()
+                  ..color = Theme.of(context).colorScheme.primary
+                  ..strokeWidth = 2
+                  ..style = PaintingStyle.stroke,
+                builder: (Node node) {
+                  final nodeId = node.key!.value as String;
+                  final workflowNode = widget.graph.getNodeById(nodeId);
 
-          if (workflowNode == null) {
-            return const SizedBox();
-          }
+                  if (workflowNode == null) {
+                    return const SizedBox();
+                  }
 
-          return _buildNodeWidget(workflowNode);
-        },
-      ),
+                  return _buildNodeWidget(workflowNode);
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

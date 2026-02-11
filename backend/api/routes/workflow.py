@@ -2,6 +2,8 @@
 Workflow API endpoints
 Provides access to scan workflow graphs and traces
 """
+import logging
+
 from fastapi import APIRouter, HTTPException
 from typing import List
 
@@ -12,8 +14,20 @@ from models.schemas import (
     WorkflowExportResponse
 )
 from services.workflow_analyzer import workflow_analyzer
+from services.garak_wrapper import garak_wrapper
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/scan", tags=["workflow"])
+
+
+def _ensure_workflow(scan_id: str) -> None:
+    """Build workflow from JSONL report if not already in memory."""
+    if workflow_analyzer.get_workflow_graph(scan_id) is not None:
+        return
+    entries = garak_wrapper._get_report_entries(scan_id)
+    if entries:
+        workflow_analyzer.build_from_report_entries(scan_id, entries)
 
 
 @router.get("/{scan_id}/workflow", response_model=WorkflowGraph)
@@ -23,6 +37,7 @@ async def get_workflow_graph(scan_id: str):
 
     Returns all nodes, edges, traces, and statistics for the workflow
     """
+    _ensure_workflow(scan_id)
     workflow = workflow_analyzer.get_workflow_graph(scan_id)
 
     if not workflow:
@@ -41,6 +56,7 @@ async def get_workflow_timeline(scan_id: str):
 
     Returns events sorted by timestamp
     """
+    _ensure_workflow(scan_id)
     timeline = workflow_analyzer.get_workflow_timeline(scan_id)
 
     if not timeline:
@@ -62,6 +78,7 @@ async def export_workflow(scan_id: str, request: WorkflowExportRequest):
     - mermaid: Mermaid diagram syntax
     """
     try:
+        _ensure_workflow(scan_id)
         exported_data = workflow_analyzer.export_workflow(scan_id, request.format)
 
         if not exported_data:

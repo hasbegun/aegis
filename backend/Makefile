@@ -1,4 +1,4 @@
-.PHONY: help test test-cli test-cache test-local clean check-env health \
+.PHONY: help test test-cli test-cache test-workflow test-local clean check-env health \
         aegis-up aegis-down aegis-restart aegis-logs aegis-ps aegis-pull aegis-build \
         aegis-dev aegis-dev-down aegis-dev-logs aegis-dev-restart aegis-dev-attach \
         aegis-prod aegis-prod-down aegis-prod-logs \
@@ -24,7 +24,7 @@ help: ## Show this help message
 
 test: ## Run all tests inside backend container
 	@echo "$(BLUE)Running tests in container...$(NC)"
-	$(DOCKER_COMPOSE) exec backend python -m pytest tests/test_cli_flags.py tests/test_report_cache.py -v
+	$(DOCKER_COMPOSE) exec backend python -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py -v
 	@echo "$(GREEN)✓ All container tests passed$(NC)"
 
 test-cli: ## Run CLI flag tests locally (no container needed)
@@ -37,9 +37,14 @@ test-cache: ## Run report cache tests locally (no container needed)
 	python3 -m pytest tests/test_report_cache.py -v
 	@echo "$(GREEN)✓ Report cache tests passed$(NC)"
 
+test-workflow: ## Run workflow analyzer tests locally (no container needed)
+	@echo "$(BLUE)Running workflow analyzer tests...$(NC)"
+	python3 -m pytest tests/test_workflow_analyzer.py -v
+	@echo "$(GREEN)✓ Workflow analyzer tests passed$(NC)"
+
 test-local: ## Run all local tests (no container needed)
 	@echo "$(BLUE)Running all local tests...$(NC)"
-	python3 -m pytest tests/test_cli_flags.py tests/test_report_cache.py -v
+	python3 -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py -v
 	@echo "$(GREEN)✓ All local tests passed$(NC)"
 
 clean: ## Clean up Python cache files
