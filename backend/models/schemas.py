@@ -136,6 +136,20 @@ class ScanConfigRequest(BaseModel):
         description="Timeout in seconds for each probe (1-3600)"
     )
 
+    # Config file
+    config_file: Optional[str] = Field(
+        default=None,
+        description="Path to a YAML/JSON config file for garak"
+    )
+
+    # Hit rate
+    hit_rate: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Stop scanning a probe after this hit rate is reached (0.0-1.0)"
+    )
+
     # Report threshold
     report_threshold: Optional[float] = Field(
         default=None,

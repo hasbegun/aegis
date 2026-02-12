@@ -22,9 +22,9 @@ help: ## Show this help message
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-25s$(NC) %s\n", $$1, $$2}'
 
-test: ## Run all tests inside backend container
+test: ## Run all tests inside backend container (requires dev mode: make aegis-dev)
 	@echo "$(BLUE)Running tests in container...$(NC)"
-	$(DOCKER_COMPOSE) exec backend python -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py tests/test_logging_config.py tests/test_scan_statistics.py tests/test_config_templates.py tests/test_concurrent_scans.py -v
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml exec backend python -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py tests/test_logging_config.py tests/test_scan_statistics.py tests/test_config_templates.py tests/test_concurrent_scans.py -v
 	@echo "$(GREEN)✓ All container tests passed$(NC)"
 
 test-cli: ## Run CLI flag tests locally (no container needed)

@@ -1,7 +1,8 @@
 """
 Tests for CLI flag support in ScanConfigRequest schema and ScanManager._build_command.
 
-Covers M22 (--report_threshold) and M24 (--collect_timing).
+Covers M21 (--config_file), M22 (--report_threshold), M23 (--hit_rate),
+and M24 (--collect_timing).
 """
 import json
 import sys
@@ -18,6 +19,110 @@ from models.schemas import ScanConfigRequest
 # ---------------------------------------------------------------------------
 # Schema validation tests
 # ---------------------------------------------------------------------------
+
+class TestConfigFileSchema:
+    """M21: --config_file schema validation."""
+
+    def test_default_is_none(self):
+        config = ScanConfigRequest(target_type="ollama", target_name="llama3.2:3b")
+        assert config.config_file is None
+
+    def test_valid_path(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            config_file="/path/to/config.yaml",
+        )
+        assert config.config_file == "/path/to/config.yaml"
+
+    def test_json_path(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            config_file="scan_config.json",
+        )
+        assert config.config_file == "scan_config.json"
+
+    def test_serialization_roundtrip(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            config_file="/data/my_config.yaml",
+        )
+        data = config.model_dump()
+        assert data["config_file"] == "/data/my_config.yaml"
+        restored = ScanConfigRequest(**data)
+        assert restored.config_file == "/data/my_config.yaml"
+
+    def test_none_omitted_in_json(self):
+        config = ScanConfigRequest(target_type="ollama", target_name="llama3.2:3b")
+        data = config.model_dump(exclude_none=True)
+        assert "config_file" not in data
+
+
+class TestHitRateSchema:
+    """M23: --hit_rate schema validation."""
+
+    def test_default_is_none(self):
+        config = ScanConfigRequest(target_type="ollama", target_name="llama3.2:3b")
+        assert config.hit_rate is None
+
+    def test_valid_value(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            hit_rate=0.5,
+        )
+        assert config.hit_rate == 0.5
+
+    def test_zero_is_valid(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            hit_rate=0.0,
+        )
+        assert config.hit_rate == 0.0
+
+    def test_one_is_valid(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            hit_rate=1.0,
+        )
+        assert config.hit_rate == 1.0
+
+    def test_negative_rejected(self):
+        with pytest.raises(Exception):
+            ScanConfigRequest(
+                target_type="ollama",
+                target_name="llama3.2:3b",
+                hit_rate=-0.1,
+            )
+
+    def test_above_one_rejected(self):
+        with pytest.raises(Exception):
+            ScanConfigRequest(
+                target_type="ollama",
+                target_name="llama3.2:3b",
+                hit_rate=1.1,
+            )
+
+    def test_serialization_roundtrip(self):
+        config = ScanConfigRequest(
+            target_type="ollama",
+            target_name="llama3.2:3b",
+            hit_rate=0.3,
+        )
+        data = config.model_dump()
+        assert data["hit_rate"] == 0.3
+        restored = ScanConfigRequest(**data)
+        assert restored.hit_rate == 0.3
+
+    def test_none_omitted_in_json(self):
+        config = ScanConfigRequest(target_type="ollama", target_name="llama3.2:3b")
+        data = config.model_dump(exclude_none=True)
+        assert "hit_rate" not in data
+
 
 class TestReportThresholdSchema:
     """M22: --report_threshold schema validation."""
@@ -122,6 +227,67 @@ class TestCollectTimingSchema:
 # CLI command building tests
 # ---------------------------------------------------------------------------
 
+class TestBuildCommandConfigFile:
+    """M21: --config in CLI command builder."""
+
+    def _build(self, config_overrides: dict) -> list[str]:
+        from scan_manager import ScanManager
+        mgr = ScanManager.__new__(ScanManager)
+        mgr.garak_path = "/usr/local/bin/garak"
+        base = {"target_type": "ollama", "target_name": "llama3.2:3b"}
+        base.update(config_overrides)
+        return mgr._build_command(base)
+
+    def test_not_present_when_none(self):
+        cmd = self._build({})
+        assert "--config" not in cmd
+
+    def test_present_when_set(self):
+        cmd = self._build({"config_file": "/path/to/config.yaml"})
+        idx = cmd.index("--config")
+        assert cmd[idx + 1] == "/path/to/config.yaml"
+
+    def test_empty_string_not_present(self):
+        cmd = self._build({"config_file": ""})
+        assert "--config" not in cmd
+
+    def test_json_file_path(self):
+        cmd = self._build({"config_file": "scan.json"})
+        idx = cmd.index("--config")
+        assert cmd[idx + 1] == "scan.json"
+
+
+class TestBuildCommandHitRate:
+    """M23: --hit_rate in CLI command builder."""
+
+    def _build(self, config_overrides: dict) -> list[str]:
+        from scan_manager import ScanManager
+        mgr = ScanManager.__new__(ScanManager)
+        mgr.garak_path = "/usr/local/bin/garak"
+        base = {"target_type": "ollama", "target_name": "llama3.2:3b"}
+        base.update(config_overrides)
+        return mgr._build_command(base)
+
+    def test_not_present_when_none(self):
+        cmd = self._build({})
+        assert "--hit_rate" not in cmd
+
+    def test_present_when_set(self):
+        cmd = self._build({"hit_rate": 0.5})
+        idx = cmd.index("--hit_rate")
+        assert cmd[idx + 1] == "0.5"
+
+    def test_zero_value(self):
+        cmd = self._build({"hit_rate": 0.0})
+        idx = cmd.index("--hit_rate")
+        assert cmd[idx + 1] == "0.0"
+
+    def test_one_value(self):
+        cmd = self._build({"hit_rate": 1.0})
+        idx = cmd.index("--hit_rate")
+        assert cmd[idx + 1] == "1.0"
+
+
 class TestBuildCommandReportThreshold:
     """M22: --report_threshold in CLI command builder."""
 
@@ -192,7 +358,7 @@ class TestBuildCommandCollectTiming:
 # ---------------------------------------------------------------------------
 
 class TestBuildCommandCombined:
-    """Test both flags together with other existing flags."""
+    """Test all M21-M24 flags together with other existing flags."""
 
     def _build(self, config_overrides: dict) -> list[str]:
         from scan_manager import ScanManager
@@ -202,25 +368,37 @@ class TestBuildCommandCombined:
         base.update(config_overrides)
         return mgr._build_command(base)
 
-    def test_both_flags_present(self):
+    def test_all_four_flags_present(self):
         cmd = self._build({
+            "config_file": "/path/to/config.yaml",
             "report_threshold": 0.5,
+            "hit_rate": 0.3,
             "collect_timing": True,
         })
+        assert "--config" in cmd
         assert "--report_threshold" in cmd
+        assert "--hit_rate" in cmd
         assert "--collect_timing" in cmd
+        idx = cmd.index("--config")
+        assert cmd[idx + 1] == "/path/to/config.yaml"
         idx = cmd.index("--report_threshold")
         assert cmd[idx + 1] == "0.5"
+        idx = cmd.index("--hit_rate")
+        assert cmd[idx + 1] == "0.3"
 
-    def test_both_flags_with_existing_flags(self):
+    def test_all_flags_with_existing_flags(self):
         cmd = self._build({
+            "config_file": "scan.yaml",
             "report_threshold": 0.8,
+            "hit_rate": 0.5,
             "collect_timing": True,
             "timeout_per_probe": 120,
             "continue_on_error": True,
             "extended_detectors": True,
         })
+        assert "--config" in cmd
         assert "--report_threshold" in cmd
+        assert "--hit_rate" in cmd
         assert "--collect_timing" in cmd
         assert "--timeout_per_probe" in cmd
         assert "--continue_on_error" in cmd
@@ -231,12 +409,20 @@ class TestBuildCommandCombined:
         config = ScanConfigRequest(
             target_type="ollama",
             target_name="llama3.2:3b",
+            config_file="/data/config.yaml",
             report_threshold=0.65,
+            hit_rate=0.4,
             collect_timing=True,
             generations=3,
         )
         cmd = self._build(config.model_dump())
+        assert "--config" in cmd
         assert "--report_threshold" in cmd
+        assert "--hit_rate" in cmd
         assert "--collect_timing" in cmd
+        idx = cmd.index("--config")
+        assert cmd[idx + 1] == "/data/config.yaml"
         idx = cmd.index("--report_threshold")
         assert cmd[idx + 1] == "0.65"
+        idx = cmd.index("--hit_rate")
+        assert cmd[idx + 1] == "0.4"

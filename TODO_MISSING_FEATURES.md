@@ -6,7 +6,7 @@ A comprehensive list of missing features organized from easy to hard.
 
 ## Quick Stats
 - **Easy (1-2 hours)**: 20 items (20 completed)
-- **Medium (2-8 hours)**: 25 items (20 completed)
+- **Medium (2-8 hours)**: 25 items (24 completed)
 - **Hard (1-3 days)**: 16 items (3 completed)
 - **Very Hard (1+ week)**: 10 items
 - **Architecture**: 1 major item (completed)
@@ -52,6 +52,17 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 
 **Files created:** `tests/test_concurrent_scans.py`
 **Files modified:** `services/garak_wrapper.py` (added `MaxConcurrentScansError`, `_count_running_scans()`), `api/routes/scan.py` (429 handler)
+
+### M21-M24 — Advanced Garak CLI Flags (2026-02-11)
+Exposed four additional garak CLI flags through the scan config schema and command builder:
+- **M21** `--config_file`: Load scan configuration from a YAML/JSON file (`--config` in CLI)
+- **M22** `--report_threshold`: Only report results above a threshold (0.0-1.0)
+- **M23** `--hit_rate`: Stop scanning a probe after reaching a vulnerability hit rate (0.0-1.0)
+- **M24** `--collect_timing`: Collect timing metrics for each probe (boolean flag)
+
+Each flag has schema validation (type, range), serialization roundtrip, and CLI command builder tests. 21 new tests (44 total in `test_cli_flags.py`).
+
+**Files modified:** `models/schemas.py` (2 new fields), `services/garak_service/scan_manager.py` (2 new CLI mappings), `tests/test_cli_flags.py` (21 new tests)
 
 ---
 
@@ -114,10 +125,10 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 - [x] **M20.** Enforce `max_concurrent_scans` limit with queue (completed 2026-02-11)
 
 ### Garak CLI Flags
-- [ ] **M21.** Expose `--config_file` - Load config from YAML/JSON file
-- [ ] **M22.** Expose `--report_threshold` - Only report above threshold
-- [ ] **M23.** Expose `--hit_rate` - Stop after N vulnerabilities
-- [ ] **M24.** Expose `--collect_timing` - Timing metrics per probe
+- [x] **M21.** Expose `--config_file` - Load config from YAML/JSON file (completed 2026-02-11)
+- [x] **M22.** Expose `--report_threshold` - Only report above threshold (completed 2026-02-11)
+- [x] **M23.** Expose `--hit_rate` - Stop after N vulnerabilities (completed 2026-02-11)
+- [x] **M24.** Expose `--collect_timing` - Timing metrics per probe (completed 2026-02-11)
 
 ### Testing
 - [ ] **M25.** Add widget tests for main screens (home, config, results) — *only 1 basic smoke test exists*
@@ -195,7 +206,7 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 | ID | Feature | Difficulty | Status |
 |----|---------|------------|--------|
 | E7-E12 | Basic CLI flags | Easy | All done |
-| M21-M24 | Advanced CLI flags | Medium | Open |
+| M21-M24 | Advanced CLI flags | Medium | All done |
 
 ### Testing & Documentation
 | ID | Feature | Difficulty | Status |
@@ -227,9 +238,9 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 4. ~~**M20** - Enforce concurrent scan limit~~ (done)
 
 ### For Power Users
-1. **M21** - Config file loading
+1. ~~**M21** - Config file loading~~ (done)
 2. **H2** - Scheduled scans
-3. **M22-M24** - Advanced CLI flags (threshold, hit rate, timing)
+3. ~~**M22-M24** - Advanced CLI flags~~ (done)
 
 ---
 

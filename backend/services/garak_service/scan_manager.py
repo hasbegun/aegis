@@ -265,6 +265,12 @@ class ScanManager:
         if config.get("timeout_per_probe") is not None:
             cmd.extend(["--timeout_per_probe", str(config["timeout_per_probe"])])
 
+        if config.get("config_file"):
+            cmd.extend(["--config", config["config_file"]])
+
+        if config.get("hit_rate") is not None:
+            cmd.extend(["--hit_rate", str(config["hit_rate"])])
+
         if config.get("report_threshold") is not None:
             cmd.extend(["--report_threshold", str(config["report_threshold"])])
 
