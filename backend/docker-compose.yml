@@ -15,6 +15,7 @@ services:
       PORT: "8888"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
 
       # Garak Configuration
       GARAK_REPORTS_DIR: "/data/garak_reports"
@@ -46,6 +47,8 @@ services:
     container_name: aegis-garak
     environment:
       GARAK_REPORTS_DIR: "/data/garak_reports"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
 
       # Ollama host (garak needs this to connect to LLMs)
       OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"

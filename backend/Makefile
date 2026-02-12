@@ -1,4 +1,4 @@
-.PHONY: help test test-cli test-cache test-workflow test-local clean check-env health \
+.PHONY: help test test-cli test-cache test-workflow test-logging test-statistics test-templates test-concurrent test-local clean check-env health \
         aegis-up aegis-down aegis-restart aegis-logs aegis-ps aegis-pull aegis-build \
         aegis-dev aegis-dev-down aegis-dev-logs aegis-dev-restart aegis-dev-attach \
         aegis-prod aegis-prod-down aegis-prod-logs \
@@ -24,7 +24,7 @@ help: ## Show this help message
 
 test: ## Run all tests inside backend container
 	@echo "$(BLUE)Running tests in container...$(NC)"
-	$(DOCKER_COMPOSE) exec backend python -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py -v
+	$(DOCKER_COMPOSE) exec backend python -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py tests/test_logging_config.py tests/test_scan_statistics.py tests/test_config_templates.py tests/test_concurrent_scans.py -v
 	@echo "$(GREEN)✓ All container tests passed$(NC)"
 
 test-cli: ## Run CLI flag tests locally (no container needed)
@@ -42,9 +42,29 @@ test-workflow: ## Run workflow analyzer tests locally (no container needed)
 	python3 -m pytest tests/test_workflow_analyzer.py -v
 	@echo "$(GREEN)✓ Workflow analyzer tests passed$(NC)"
 
+test-logging: ## Run logging config tests locally (no container needed)
+	@echo "$(BLUE)Running logging config tests...$(NC)"
+	python3 -m pytest tests/test_logging_config.py -v
+	@echo "$(GREEN)✓ Logging config tests passed$(NC)"
+
+test-statistics: ## Run scan statistics tests locally (no container needed)
+	@echo "$(BLUE)Running scan statistics tests...$(NC)"
+	python3 -m pytest tests/test_scan_statistics.py -v
+	@echo "$(GREEN)✓ Scan statistics tests passed$(NC)"
+
+test-templates: ## Run config template tests locally (no container needed)
+	@echo "$(BLUE)Running config template tests...$(NC)"
+	python3 -m pytest tests/test_config_templates.py -v
+	@echo "$(GREEN)✓ Config template tests passed$(NC)"
+
+test-concurrent: ## Run concurrent scan tests locally (no container needed)
+	@echo "$(BLUE)Running concurrent scan tests...$(NC)"
+	python3 -m pytest tests/test_concurrent_scans.py -v
+	@echo "$(GREEN)✓ Concurrent scan tests passed$(NC)"
+
 test-local: ## Run all local tests (no container needed)
 	@echo "$(BLUE)Running all local tests...$(NC)"
-	python3 -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py -v
+	python3 -m pytest tests/test_cli_flags.py tests/test_report_cache.py tests/test_workflow_analyzer.py tests/test_logging_config.py tests/test_scan_statistics.py tests/test_config_templates.py tests/test_concurrent_scans.py -v
 	@echo "$(GREEN)✓ All local tests passed$(NC)"
 
 clean: ## Clean up Python cache files

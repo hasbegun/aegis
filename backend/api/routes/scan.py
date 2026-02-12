@@ -15,8 +15,9 @@ from models.schemas import (
     SortOrder,
     ProbeDetailsResponse,
     ProbeAttemptsResponse,
+    ScanStatisticsResponse,
 )
-from services.garak_wrapper import garak_wrapper
+from services.garak_wrapper import garak_wrapper, MaxConcurrentScansError
 from datetime import datetime
 from typing import Optional
 import asyncio
@@ -47,7 +48,7 @@ async def start_scan(config: ScanConfigRequest):
                 detail="Garak is not installed or not accessible"
             )
 
-        # Start the scan
+        # Start the scan (enforces concurrent scan limit)
         scan_id = await garak_wrapper.start_scan(config)
 
         return ScanResponse(
@@ -57,9 +58,24 @@ async def start_scan(config: ScanConfigRequest):
             created_at=datetime.now().isoformat()
         )
 
+    except MaxConcurrentScansError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error starting scan: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/statistics", response_model=ScanStatisticsResponse)
+async def get_scan_statistics(
+    days: int = Query(30, ge=1, le=365, description="Number of days for daily trend data"),
+):
+    """
+    Get aggregate scan statistics including pass rates, trends,
+    top failing probes, and per-target breakdowns.
+    """
+    return garak_wrapper.get_scan_statistics(days=days)
 
 
 @router.get("/{scan_id}/status", response_model=ScanStatusResponse)

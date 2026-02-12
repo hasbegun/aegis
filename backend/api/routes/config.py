@@ -2,8 +2,14 @@
 Configuration management endpoints
 """
 from fastapi import APIRouter, HTTPException
-from models.schemas import ConfigPreset
-from typing import List
+from models.schemas import (
+    ConfigPreset,
+    ConfigTemplateSave,
+    ConfigTemplate,
+    ConfigTemplateListResponse,
+)
+from services.config_template_store import config_template_store
+from typing import List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -132,3 +138,59 @@ async def validate_config(config: dict):
         "valid": True,
         "message": "Configuration is valid"
     }
+
+
+# =============================================================================
+# User Config Templates (M19)
+# =============================================================================
+
+@router.get("/templates", response_model=ConfigTemplateListResponse)
+async def list_templates():
+    """List all saved user config templates, sorted by most recently updated."""
+    templates = config_template_store.list_templates()
+    return ConfigTemplateListResponse(templates=templates, total_count=len(templates))
+
+
+@router.get("/templates/{template_name}", response_model=ConfigTemplate)
+async def get_template(template_name: str):
+    """Get a specific user config template by name."""
+    template = config_template_store.get_template(template_name)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Template '{template_name}' not found")
+    return template
+
+
+@router.post("/templates", response_model=ConfigTemplate, status_code=201)
+async def create_template(body: ConfigTemplateSave):
+    """Save a new user config template."""
+    try:
+        template = config_template_store.save_template(
+            name=body.name,
+            config=body.config,
+            description=body.description,
+        )
+        return template
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/templates/{template_name}", response_model=ConfigTemplate)
+async def update_template(template_name: str, body: ConfigTemplateSave):
+    """Update an existing user config template."""
+    try:
+        template = config_template_store.update_template(
+            name=template_name,
+            config=body.config,
+            description=body.description,
+        )
+        return template
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/templates/{template_name}")
+async def delete_template(template_name: str):
+    """Delete a user config template."""
+    if not config_template_store.delete_template(template_name):
+        raise HTTPException(status_code=404, detail=f"Template '{template_name}' not found")
+    return {"message": f"Template '{template_name}' deleted successfully"}

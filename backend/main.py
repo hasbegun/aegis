@@ -10,13 +10,17 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from api.routes import scan, plugins, config, system, custom_probes, workflow, models
 from config import settings
+from logging_config import setup_logging
 from services.model_discovery import initialize_model_discovery
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper()),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Configure structured logging (M16) with optional rotation (M17)
+setup_logging(
+    level=settings.log_level,
+    log_format=settings.log_format,
+    log_file=settings.log_file,
+    max_bytes=settings.log_max_bytes,
+    backup_count=settings.log_backup_count,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,9 +41,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         # Log request details (skip health checks to reduce noise)
         if request.url.path not in ["/health", "/"]:
             logger.info(
-                f"{request.method} {request.url.path} - "
-                f"Status: {response.status_code} - "
-                f"Duration: {duration_ms:.2f}ms"
+                "%s %s %d %.2fms",
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+                extra={
+                    "http_method": request.method,
+                    "path": request.url.path,
+                    "status_code": response.status_code,
+                    "duration_ms": round(duration_ms, 2),
+                },
             )
 
         # Add timing header to response
@@ -133,11 +145,17 @@ async def version_info():
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info(f"Server configuration:")
-    logger.info(f"  Host: {settings.host}")
-    logger.info(f"  Port: {settings.port}")
-    logger.info(f"  CORS Origins: {settings.cors_origins_list}")
-    logger.info(f"  Log Level: {settings.log_level}")
+    logger.info(
+        "Server configuration",
+        extra={
+            "host": settings.host,
+            "port": settings.port,
+            "cors_origins": settings.cors_origins_list,
+            "log_level": settings.log_level,
+            "log_format": settings.log_format,
+            "log_file": settings.log_file,
+        },
+    )
 
     uvicorn.run(
         "main:app",

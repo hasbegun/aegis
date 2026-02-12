@@ -24,6 +24,18 @@ logger = logging.getLogger(__name__)
 REPORT_CACHE_TTL = 300  # 5 minutes
 
 
+class MaxConcurrentScansError(Exception):
+    """Raised when the concurrent scan limit is reached."""
+
+    def __init__(self, running: int, limit: int):
+        self.running = running
+        self.limit = limit
+        super().__init__(
+            f"Concurrent scan limit reached: {running}/{limit} scans running. "
+            f"Wait for a scan to finish or cancel one before starting a new scan."
+        )
+
+
 class GarakWrapper:
     """HTTP client for the garak container service."""
 
@@ -31,8 +43,12 @@ class GarakWrapper:
         self.garak_service_url = garak_service_url or settings.garak_service_url
         self.active_scans: Dict[str, Dict[str, Any]] = {}
         self.garak_reports_dir = settings.garak_reports_path
-        # Report cache: scan_id → {"entries": [...], "mtime": float, "cached_at": float}
+        # Layer 1: raw JSONL entries  scan_id → {"entries": [...], "mtime": float, "cached_at": float}
         self._report_cache: Dict[str, Dict[str, Any]] = {}
+        # Layer 2: parsed scan info  scan_id → {"data": {...}, "mtime": float}
+        self._scan_info_cache: Dict[str, Dict[str, Any]] = {}
+        # Layer 3: full results      scan_id → {"data": {...}, "mtime": float}
+        self._results_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl = cache_ttl
         logger.info(f"Garak service URL: {self.garak_service_url}")
         logger.info(f"Garak reports directory: {self.garak_reports_dir}")
@@ -80,8 +96,24 @@ class GarakWrapper:
     # Scan lifecycle
     # ------------------------------------------------------------------
 
+    def _count_running_scans(self) -> int:
+        """Count scans in PENDING or RUNNING state."""
+        return sum(
+            1 for s in self.active_scans.values()
+            if s.get("status") in (ScanStatus.PENDING, ScanStatus.RUNNING)
+        )
+
     async def start_scan(self, config: ScanConfigRequest) -> str:
-        """Start a scan via the garak service."""
+        """Start a scan via the garak service.
+
+        Raises MaxConcurrentScansError if the concurrent scan limit is reached.
+        """
+        # Enforce concurrent scan limit
+        running = self._count_running_scans()
+        limit = settings.max_concurrent_scans
+        if running >= limit:
+            raise MaxConcurrentScansError(running, limit)
+
         scan_id = str(uuid.uuid4())
 
         # Send scan config to garak service
@@ -474,18 +506,33 @@ class GarakWrapper:
         return entries
 
     def invalidate_cache(self, scan_id: str):
-        """Remove cached report data for a scan."""
+        """Remove all cached data for a scan."""
         self._report_cache.pop(scan_id, None)
+        self._scan_info_cache.pop(scan_id, None)
+        self._results_cache.pop(scan_id, None)
 
     def clear_cache(self):
-        """Remove all cached report data."""
+        """Remove all cached data."""
         self._report_cache.clear()
+        self._scan_info_cache.clear()
+        self._results_cache.clear()
 
     def _parse_report_file(self, report_file: Path, scan_id: str) -> Optional[Dict[str, Any]]:
         """Parse a garak report.jsonl file to extract scan information.
 
-        Uses cached JSONL entries when available.
+        Uses Layer 2 cache (scan info) when available, falling back to
+        Layer 1 (raw entries) for processing.
         """
+        try:
+            file_mtime = report_file.stat().st_mtime
+        except OSError:
+            return None
+
+        # Check Layer 2 cache
+        cached = self._scan_info_cache.get(scan_id)
+        if cached and cached["mtime"] == file_mtime:
+            return cached["data"]
+
         entries = self._get_report_entries(scan_id)
         if not entries:
             return None
@@ -524,8 +571,11 @@ class GarakWrapper:
                     scan_info["digest"] = entry.get("eval", {})
 
             if not scan_info["started_at"]:
-                file_mtime = datetime.fromtimestamp(report_file.stat().st_mtime)
-                scan_info["started_at"] = file_mtime.isoformat()
+                file_mtime_dt = datetime.fromtimestamp(file_mtime)
+                scan_info["started_at"] = file_mtime_dt.isoformat()
+
+            # Store in Layer 2 cache
+            self._scan_info_cache[scan_id] = {"data": scan_info, "mtime": file_mtime}
 
             return scan_info
 
@@ -534,7 +584,37 @@ class GarakWrapper:
             return None
 
     def get_scan_results(self, scan_id: str) -> Optional[Dict[str, Any]]:
-        """Get detailed scan results including probe-level breakdown."""
+        """Get detailed scan results including probe-level breakdown.
+
+        For completed (historical) scans the result is cached in Layer 3.
+        Active scans always return live data.
+        """
+        # Active scans → live data, no cache
+        if scan_id in self.active_scans:
+            return self._build_results(scan_id)
+
+        # Check Layer 3 cache for historical scans
+        report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
+        if report_file.exists():
+            try:
+                file_mtime = report_file.stat().st_mtime
+            except OSError:
+                file_mtime = None
+
+            if file_mtime is not None:
+                cached = self._results_cache.get(scan_id)
+                if cached and cached["mtime"] == file_mtime:
+                    return cached["data"]
+
+            result = self._build_results(scan_id)
+            if result and file_mtime is not None:
+                self._results_cache[scan_id] = {"data": result, "mtime": file_mtime}
+            return result
+
+        return None
+
+    def _build_results(self, scan_id: str) -> Optional[Dict[str, Any]]:
+        """Build the results dict from scan info (uncached)."""
         scan_info = self.get_scan_status(scan_id)
         if not scan_info:
             return None
@@ -544,7 +624,7 @@ class GarakWrapper:
             config = scan_info["config"]
             config_data = config.model_dump() if hasattr(config, "model_dump") else config
 
-        results = {
+        return {
             "scan_id": scan_id,
             "status": scan_info["status"],
             "config": config_data,
@@ -571,8 +651,6 @@ class GarakWrapper:
             "jsonl_report_path": scan_info.get("jsonl_report_path"),
             "output_lines": scan_info.get("output_lines", []),
         }
-
-        return results
 
     def _calculate_duration(self, scan_info: Dict[str, Any]) -> Optional[float]:
         if not scan_info.get("started_at") or not scan_info.get("completed_at"):
@@ -769,6 +847,164 @@ class GarakWrapper:
             "page": page,
             "page_size": page_size,
             "attempts": attempts[start:end],
+        }
+
+    # ------------------------------------------------------------------
+    # Aggregate statistics
+    # ------------------------------------------------------------------
+
+    def get_scan_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """Compute aggregate statistics across all scans.
+
+        Args:
+            days: Number of days of daily trend data to return.
+        """
+        all_scans = self.get_all_scans()
+
+        # --- Counters ---
+        status_counts: Dict[str, int] = {
+            "completed": 0, "failed": 0, "cancelled": 0, "running": 0, "pending": 0,
+        }
+        total_passed = 0
+        total_failed = 0
+        pass_rates: List[float] = []
+
+        # For probe failure aggregation we need JSONL data from completed scans
+        probe_agg: Dict[str, Dict[str, int]] = {}  # category → {passed, failed}
+
+        # For target breakdown
+        target_agg: Dict[str, Dict[str, Any]] = {}  # "type::name" → {scan_count, pass_rates, last_scanned}
+
+        # For daily trends
+        from collections import defaultdict
+        daily: Dict[str, Dict[str, Any]] = defaultdict(
+            lambda: {"scan_count": 0, "total_passed": 0, "total_failed": 0, "pass_rates": []}
+        )
+
+        for scan in all_scans:
+            status = scan.get("status", "unknown").lower()
+            status_counts[status] = status_counts.get(status, 0) + 1
+
+            passed = scan.get("passed", 0)
+            failed = scan.get("failed", 0)
+            total_passed += passed
+            total_failed += failed
+
+            scan_total = passed + failed
+            if scan_total > 0 and status == "completed":
+                rate = (passed / scan_total) * 100.0
+                pass_rates.append(rate)
+
+            # Daily trend
+            started_at = scan.get("started_at", "")
+            if started_at:
+                try:
+                    day_key = datetime.fromisoformat(started_at).strftime("%Y-%m-%d")
+                    daily[day_key]["scan_count"] += 1
+                    daily[day_key]["total_passed"] += passed
+                    daily[day_key]["total_failed"] += failed
+                    if scan_total > 0:
+                        daily[day_key]["pass_rates"].append((passed / scan_total) * 100.0)
+                except (ValueError, TypeError):
+                    pass
+
+            # Target breakdown
+            t_type = scan.get("target_type", "unknown")
+            t_name = scan.get("target_name", "unknown")
+            key = f"{t_type}::{t_name}"
+            if key not in target_agg:
+                target_agg[key] = {
+                    "target_type": t_type,
+                    "target_name": t_name,
+                    "scan_count": 0,
+                    "pass_rates": [],
+                    "last_scanned": started_at,
+                }
+            target_agg[key]["scan_count"] += 1
+            if scan_total > 0 and status == "completed":
+                target_agg[key]["pass_rates"].append((passed / scan_total) * 100.0)
+            if started_at and started_at > (target_agg[key]["last_scanned"] or ""):
+                target_agg[key]["last_scanned"] = started_at
+
+            # Probe failure aggregation (only for completed scans with reports)
+            if status == "completed":
+                scan_id = scan.get("scan_id", "")
+                entries = self._get_report_entries(scan_id)
+                if entries:
+                    for entry in entries:
+                        if entry.get("entry_type") != "attempt":
+                            continue
+                        probe_name = entry.get("probe_classname", "unknown")
+                        category = probe_name.split(".")[0]
+                        if category not in probe_agg:
+                            probe_agg[category] = {"passed": 0, "failed": 0}
+                        entry_status = entry.get("status")
+                        if entry_status == 2:
+                            probe_agg[category]["passed"] += 1
+                        elif entry_status == 1:
+                            probe_agg[category]["failed"] += 1
+
+        # --- Build response ---
+        total_tests = total_passed + total_failed
+        overall_pass_rate = (total_passed / total_tests * 100.0) if total_tests > 0 else 0.0
+
+        avg_pass_rate = (sum(pass_rates) / len(pass_rates)) if pass_rates else 0.0
+        min_pass_rate = min(pass_rates) if pass_rates else None
+        max_pass_rate = max(pass_rates) if pass_rates else None
+
+        # Daily trends (last N days, sorted ascending)
+        today = datetime.now()
+        trend_points = []
+        for i in range(days - 1, -1, -1):
+            from datetime import timedelta
+            day = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            d = daily.get(day, {"scan_count": 0, "total_passed": 0, "total_failed": 0, "pass_rates": []})
+            rates = d["pass_rates"] if isinstance(d.get("pass_rates"), list) else []
+            trend_points.append({
+                "date": day,
+                "scan_count": d["scan_count"],
+                "total_passed": d["total_passed"],
+                "total_failed": d["total_failed"],
+                "avg_pass_rate": round(sum(rates) / len(rates), 1) if rates else 0.0,
+            })
+
+        # Top failing probes (sorted by failure count descending, top 10)
+        top_probes = []
+        for category, counts in probe_agg.items():
+            cat_total = counts["passed"] + counts["failed"]
+            if cat_total > 0:
+                top_probes.append({
+                    "probe_category": category,
+                    "failure_count": counts["failed"],
+                    "total_count": cat_total,
+                    "failure_rate": round(counts["failed"] / cat_total * 100.0, 1),
+                })
+        top_probes.sort(key=lambda p: p["failure_count"], reverse=True)
+
+        # Target breakdown (sorted by scan count descending)
+        targets = []
+        for info in target_agg.values():
+            rates = info.pop("pass_rates", [])
+            info["avg_pass_rate"] = round(sum(rates) / len(rates), 1) if rates else 0.0
+            targets.append(info)
+        targets.sort(key=lambda t: t["scan_count"], reverse=True)
+
+        return {
+            "total_scans": len(all_scans),
+            "completed_scans": status_counts.get("completed", 0),
+            "failed_scans": status_counts.get("failed", 0),
+            "cancelled_scans": status_counts.get("cancelled", 0),
+            "running_scans": status_counts.get("running", 0) + status_counts.get("pending", 0),
+            "total_tests": total_tests,
+            "total_passed": total_passed,
+            "total_failed": total_failed,
+            "overall_pass_rate": round(overall_pass_rate, 1),
+            "avg_pass_rate": round(avg_pass_rate, 1),
+            "min_pass_rate": round(min_pass_rate, 1) if min_pass_rate is not None else None,
+            "max_pass_rate": round(max_pass_rate, 1) if max_pass_rate is not None else None,
+            "daily_trends": trend_points,
+            "top_failing_probes": top_probes[:10],
+            "target_breakdown": targets,
         }
 
     def _calculate_pass_rate(self, scan_info: Dict[str, Any]) -> float:

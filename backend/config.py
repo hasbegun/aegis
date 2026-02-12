@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     # Logging Configuration
     log_level: str = "INFO"
+    log_format: str = "json"  # "json" or "text"
+    log_file: str | None = None  # File path; None = console only
+    log_max_bytes: int = 10_485_760  # 10 MB
+    log_backup_count: int = 5
 
     # Garak Configuration
     garak_path: str | None = None

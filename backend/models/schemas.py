@@ -262,6 +262,28 @@ class ConfigPreset(BaseModel):
     config: Dict[str, Any] = Field(..., description="Configuration dictionary")
 
 
+class ConfigTemplateSave(BaseModel):
+    """Request to save a user config template"""
+    name: str = Field(..., min_length=1, max_length=100, description="Template name (unique identifier)")
+    description: Optional[str] = Field(default=None, max_length=500, description="Template description")
+    config: Dict[str, Any] = Field(..., description="Scan configuration dictionary")
+
+
+class ConfigTemplate(BaseModel):
+    """Stored user config template"""
+    name: str = Field(..., description="Template name")
+    description: Optional[str] = Field(default=None, description="Template description")
+    config: Dict[str, Any] = Field(..., description="Scan configuration dictionary")
+    created_at: str = Field(..., description="Creation timestamp (ISO 8601)")
+    updated_at: str = Field(..., description="Last update timestamp (ISO 8601)")
+
+
+class ConfigTemplateListResponse(BaseModel):
+    """Response for listing user templates"""
+    templates: List[ConfigTemplate] = Field(default_factory=list, description="User config templates")
+    total_count: int = Field(default=0, description="Total number of templates")
+
+
 class SystemInfoResponse(BaseModel):
     """System information response"""
     garak_version: str
@@ -487,6 +509,70 @@ class WorkflowExportResponse(BaseModel):
     data: Optional[str] = Field(default=None, description="Exported data (for text formats)")
     file_path: Optional[str] = Field(default=None, description="Path to exported file (for binary formats)")
     download_url: Optional[str] = Field(default=None, description="URL to download the exported file")
+
+
+# ============================================================================
+# Probe Details Models
+# ============================================================================
+
+# ============================================================================
+# Scan Statistics Models
+# ============================================================================
+
+class DailyTrendPoint(BaseModel):
+    """A single day's scan statistics."""
+    date: str = Field(..., description="ISO date (YYYY-MM-DD)")
+    scan_count: int = Field(default=0, description="Number of scans on this day")
+    avg_pass_rate: float = Field(default=0.0, description="Average pass rate (0-100)")
+    total_passed: int = Field(default=0, description="Total passed tests")
+    total_failed: int = Field(default=0, description="Total failed tests")
+
+
+class ProbeFailureStat(BaseModel):
+    """Aggregated failure statistics for a probe category."""
+    probe_category: str = Field(..., description="Probe category name")
+    failure_count: int = Field(default=0, description="Total failures across all scans")
+    total_count: int = Field(default=0, description="Total tests across all scans")
+    failure_rate: float = Field(default=0.0, description="Failure rate (0-100)")
+
+
+class TargetStat(BaseModel):
+    """Aggregated statistics for a scan target."""
+    target_type: str = Field(..., description="Generator type")
+    target_name: str = Field(..., description="Model name")
+    scan_count: int = Field(default=0, description="Number of scans for this target")
+    avg_pass_rate: float = Field(default=0.0, description="Average pass rate (0-100)")
+    last_scanned: Optional[str] = Field(default=None, description="Most recent scan timestamp")
+
+
+class ScanStatisticsResponse(BaseModel):
+    """Aggregate scan statistics."""
+    # Scan counts
+    total_scans: int = Field(default=0, description="Total number of scans")
+    completed_scans: int = Field(default=0, description="Completed scans")
+    failed_scans: int = Field(default=0, description="Failed scans")
+    cancelled_scans: int = Field(default=0, description="Cancelled scans")
+    running_scans: int = Field(default=0, description="Currently running scans")
+
+    # Test aggregates
+    total_tests: int = Field(default=0, description="Total tests across all scans")
+    total_passed: int = Field(default=0, description="Total passed tests")
+    total_failed: int = Field(default=0, description="Total failed tests")
+    overall_pass_rate: float = Field(default=0.0, description="Overall pass rate (0-100)")
+
+    # Pass rate distribution
+    avg_pass_rate: float = Field(default=0.0, description="Average pass rate across completed scans")
+    min_pass_rate: Optional[float] = Field(default=None, description="Worst scan pass rate")
+    max_pass_rate: Optional[float] = Field(default=None, description="Best scan pass rate")
+
+    # Trends
+    daily_trends: List[DailyTrendPoint] = Field(default_factory=list, description="Daily trend data (last 30 days)")
+
+    # Top failures
+    top_failing_probes: List[ProbeFailureStat] = Field(default_factory=list, description="Most frequently failing probe categories (top 10)")
+
+    # Target breakdown
+    target_breakdown: List[TargetStat] = Field(default_factory=list, description="Per-target statistics")
 
 
 # ============================================================================

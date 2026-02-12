@@ -400,3 +400,144 @@ class TestCacheEdgeCases:
             mock_settings.garak_reports_path = reports_dir
             w = GarakWrapper(cache_ttl=60)
         assert w._cache_ttl == 60
+
+
+# ---------------------------------------------------------------------------
+# Layer 2: _scan_info_cache (parsed scan info from _parse_report_file)
+# ---------------------------------------------------------------------------
+
+class TestScanInfoCache:
+    """Test Layer 2 caching of parsed scan info."""
+
+    def test_parse_populates_scan_info_cache(self, wrapper, reports_dir):
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        wrapper._parse_report_file(report_file, SCAN_ID)
+        assert SCAN_ID in wrapper._scan_info_cache
+        cached = wrapper._scan_info_cache[SCAN_ID]
+        assert "data" in cached
+        assert "mtime" in cached
+        assert cached["data"]["passed"] == 2
+
+    def test_second_parse_returns_cached_data(self, wrapper, reports_dir):
+        """Second call should return cached data without re-processing."""
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        first = wrapper._parse_report_file(report_file, SCAN_ID)
+        second = wrapper._parse_report_file(report_file, SCAN_ID)
+        assert first is second  # exact same dict object
+
+    def test_mtime_change_refreshes_scan_info(self, wrapper, reports_dir):
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        first = wrapper._parse_report_file(report_file, SCAN_ID)
+
+        # Rewrite file with extra attempt
+        time.sleep(0.05)
+        entries = _sample_entries()
+        entries.append({"entry_type": "attempt", "probe_classname": "x.Y", "status": 1})
+        report_file.write_text(_make_report_jsonl(entries))
+
+        second = wrapper._parse_report_file(report_file, SCAN_ID)
+        assert second is not first
+        assert second["failed"] == 2  # was 1, now 2
+
+    def test_invalidate_clears_scan_info_cache(self, wrapper, reports_dir):
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        wrapper._parse_report_file(report_file, SCAN_ID)
+        assert SCAN_ID in wrapper._scan_info_cache
+
+        wrapper.invalidate_cache(SCAN_ID)
+        assert SCAN_ID not in wrapper._scan_info_cache
+
+    def test_clear_cache_clears_scan_info(self, wrapper, reports_dir):
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        wrapper._parse_report_file(report_file, SCAN_ID)
+        wrapper.clear_cache()
+        assert len(wrapper._scan_info_cache) == 0
+
+
+# ---------------------------------------------------------------------------
+# Layer 3: _results_cache (get_scan_results for historical scans)
+# ---------------------------------------------------------------------------
+
+class TestResultsCache:
+    """Test Layer 3 caching of full scan results."""
+
+    def test_get_results_populates_cache(self, wrapper):
+        result = wrapper.get_scan_results(SCAN_ID)
+        assert result is not None
+        assert SCAN_ID in wrapper._results_cache
+        assert wrapper._results_cache[SCAN_ID]["data"] is result
+
+    def test_second_get_results_returns_cached(self, wrapper):
+        first = wrapper.get_scan_results(SCAN_ID)
+        second = wrapper.get_scan_results(SCAN_ID)
+        assert first is second  # same object
+
+    def test_results_cache_has_correct_data(self, wrapper):
+        result = wrapper.get_scan_results(SCAN_ID)
+        assert result["scan_id"] == SCAN_ID
+        assert result["status"] == "completed"
+        assert result["results"]["passed"] == 2
+        assert result["results"]["failed"] == 1
+        assert result["digest"] == {"dan.DanJailbreak": {"score": 0.5}}
+
+    def test_active_scan_bypasses_cache(self, wrapper):
+        """Active scans should never be cached (live data)."""
+        wrapper.active_scans[SCAN_ID] = {
+            "scan_id": SCAN_ID,
+            "status": "running",
+            "passed": 0, "failed": 0,
+            "progress": 50.0,
+        }
+        result = wrapper.get_scan_results(SCAN_ID)
+        assert result is not None
+        assert SCAN_ID not in wrapper._results_cache
+
+        # Clean up
+        del wrapper.active_scans[SCAN_ID]
+
+    def test_mtime_change_refreshes_results(self, wrapper, reports_dir):
+        first = wrapper.get_scan_results(SCAN_ID)
+        assert first is not None
+
+        time.sleep(0.05)
+        entries = _sample_entries()
+        entries.append({"entry_type": "attempt", "probe_classname": "x.Y", "status": 1})
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        report_file.write_text(_make_report_jsonl(entries))
+
+        second = wrapper.get_scan_results(SCAN_ID)
+        assert second is not first
+        assert second["results"]["failed"] == 2
+
+    def test_invalidate_clears_results_cache(self, wrapper):
+        wrapper.get_scan_results(SCAN_ID)
+        assert SCAN_ID in wrapper._results_cache
+
+        wrapper.invalidate_cache(SCAN_ID)
+        assert SCAN_ID not in wrapper._results_cache
+
+    def test_clear_cache_clears_results(self, wrapper):
+        wrapper.get_scan_results(SCAN_ID)
+        wrapper.clear_cache()
+        assert len(wrapper._results_cache) == 0
+
+    def test_nonexistent_scan_returns_none(self, wrapper):
+        result = wrapper.get_scan_results("nonexistent")
+        assert result is None
+
+    def test_all_three_layers_cleared_together(self, wrapper, reports_dir):
+        """invalidate_cache should clear all three cache layers."""
+        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+        wrapper._get_report_entries(SCAN_ID)
+        wrapper._parse_report_file(report_file, SCAN_ID)
+        wrapper.get_scan_results(SCAN_ID)
+
+        assert SCAN_ID in wrapper._report_cache
+        assert SCAN_ID in wrapper._scan_info_cache
+        assert SCAN_ID in wrapper._results_cache
+
+        wrapper.invalidate_cache(SCAN_ID)
+
+        assert SCAN_ID not in wrapper._report_cache
+        assert SCAN_ID not in wrapper._scan_info_cache
+        assert SCAN_ID not in wrapper._results_cache
