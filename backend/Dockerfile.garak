@@ -20,9 +20,8 @@ ENV PATH="/root/.cargo/bin:$PATH"
 
 RUN pip install --no-cache-dir --upgrade pip
 
-# Clone garak from GitHub (dev branch) and install
 RUN git clone --depth 1 \
-    --branch dev https://github.com/hasbegun/garak.git /tmp/garak \
+    --branch main https://github.com/NVIDIA/garak.git /tmp/garak \
     && pip install --no-cache-dir /tmp/garak \
     && rm -rf /tmp/garak
 
