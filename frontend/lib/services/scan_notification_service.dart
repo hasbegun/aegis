@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
@@ -17,6 +18,8 @@ class ScanNotificationService {
   /// Initialize notification service
   Future<void> initialize() async {
     if (_initialized) return;
+    // Native notifications are not available on web
+    if (kIsWeb) return;
 
     try {
       // Android initialization
@@ -48,7 +51,7 @@ class ScanNotificationService {
       );
 
       // Request permissions for iOS/macOS
-      if (Platform.isIOS || Platform.isMacOS) {
+      if (!kIsWeb && (Platform.isIOS || Platform.isMacOS)) {
         await _notifications
             .resolvePlatformSpecificImplementation<
                 IOSFlutterLocalNotificationsPlugin>()
@@ -185,7 +188,7 @@ class ScanNotificationService {
     required int progress,
     required int maxProgress,
   }) async {
-    if (!_initialized || !Platform.isAndroid) return;
+    if (!_initialized || kIsWeb || !Platform.isAndroid) return;
 
     try {
       final notificationId = scanId.hashCode;
@@ -243,6 +246,7 @@ class ScanNotificationService {
 
   /// Check if notifications are supported
   bool get isSupported {
+    if (kIsWeb) return false;
     return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
   }
 

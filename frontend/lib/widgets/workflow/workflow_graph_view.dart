@@ -1,9 +1,14 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:graphview/GraphView.dart';
 import '../../models/workflow/workflow_graph.dart';
 import '../../models/workflow/workflow_node.dart';
 
-/// Widget for displaying workflow graph visualization
+/// Widget for displaying workflow graph visualization.
+///
+/// Uses SugiyamaAlgorithm for DAG layout (supports multiple parents per node),
+/// then renders nodes and edges manually so edges connect at node borders
+/// instead of going through node centers.
 class WorkflowGraphView extends StatefulWidget {
   final WorkflowGraph graph;
   final Function(String nodeId)? onNodeTap;
@@ -19,54 +24,54 @@ class WorkflowGraphView extends StatefulWidget {
 }
 
 class _WorkflowGraphViewState extends State<WorkflowGraphView> {
-  final Graph graph = Graph()..isTree = true;
-  late BuchheimWalkerConfiguration builder;
+  final Graph _graph = Graph();
+  late SugiyamaConfiguration _config;
+
+  static const double _nodeWidth = 170.0;
+  static const double _nodeHeight = 130.0;
+  static const double _padding = 40.0;
 
   @override
   void initState() {
     super.initState();
-    _initializeGraph();
-  }
-
-  void _initializeGraph() {
-    builder = BuchheimWalkerConfiguration()
-      ..siblingSeparation = 100
-      ..levelSeparation = 150
-      ..subtreeSeparation = 150
-      ..orientation = BuchheimWalkerConfiguration.ORIENTATION_TOP_BOTTOM;
-
-    _buildGraph();
-  }
-
-  void _buildGraph() {
-    // Clear existing graph
-    graph.nodes.clear();
-    graph.edges.clear();
-
-    // Create nodes
-    for (var node in widget.graph.nodes) {
-      graph.addNode(Node.Id(node.nodeId));
-    }
-
-    // Create edges
-    for (var edge in widget.graph.edges) {
-      try {
-        final source = graph.getNodeUsingId(edge.sourceId);
-        final target = graph.getNodeUsingId(edge.targetId);
-        graph.addEdge(source, target);
-      } catch (e) {
-        // Skip invalid edges
-        debugPrint('Failed to add edge: ${edge.sourceId} -> ${edge.targetId}');
-      }
-    }
+    _config = SugiyamaConfiguration()
+      ..nodeSeparation = 80
+      ..levelSeparation = 100
+      ..orientation = SugiyamaConfiguration.ORIENTATION_TOP_BOTTOM;
+    _buildAndLayout();
   }
 
   @override
   void didUpdateWidget(WorkflowGraphView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.graph != widget.graph) {
-      _buildGraph();
+      _buildAndLayout();
     }
+  }
+
+  void _buildAndLayout() {
+    _graph.nodes.clear();
+    _graph.edges.clear();
+
+    for (var node in widget.graph.nodes) {
+      final n = Node.Id(node.nodeId);
+      n.size = const Size(_nodeWidth, _nodeHeight);
+      _graph.addNode(n);
+    }
+
+    for (var edge in widget.graph.edges) {
+      try {
+        final source = _graph.getNodeUsingId(edge.sourceId);
+        final target = _graph.getNodeUsingId(edge.targetId);
+        _graph.addEdge(source, target);
+      } catch (e) {
+        debugPrint('Failed to add edge: ${edge.sourceId} -> ${edge.targetId}');
+      }
+    }
+
+    // Run Sugiyama layout — computes x, y for each node
+    final algorithm = SugiyamaAlgorithm(_config);
+    algorithm.run(_graph, _padding, _padding);
   }
 
   @override
@@ -94,38 +99,59 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
       );
     }
 
+    // Compute canvas size from node positions
+    double maxX = 0, maxY = 0;
+    for (var node in _graph.nodes) {
+      maxX = max(maxX, node.x + node.width);
+      maxY = max(maxY, node.y + node.height);
+    }
+    final canvasWidth = maxX + _padding;
+    final canvasHeight = maxY + _padding;
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final totalWidth = max(canvasWidth, constraints.maxWidth);
+        final totalHeight = max(canvasHeight, constraints.maxHeight);
+        // Center the graph horizontally when viewport is wider
+        final offsetX = max(0.0, (totalWidth - canvasWidth) / 2);
+
         return InteractiveViewer(
           constrained: false,
           boundaryMargin: const EdgeInsets.all(100),
           minScale: 0.1,
           maxScale: 5.0,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: constraints.maxWidth,
-              minHeight: constraints.maxHeight,
-            ),
-            child: Center(
-              child: GraphView(
-                graph: graph,
-                algorithm:
-                    BuchheimWalkerAlgorithm(builder, TreeEdgeRenderer(builder)),
-                paint: Paint()
-                  ..color = Theme.of(context).colorScheme.primary
-                  ..strokeWidth = 2
-                  ..style = PaintingStyle.stroke,
-                builder: (Node node) {
-                  final nodeId = node.key!.value as String;
-                  final workflowNode = widget.graph.getNodeById(nodeId);
-
-                  if (workflowNode == null) {
-                    return const SizedBox();
-                  }
-
-                  return _buildNodeWidget(workflowNode);
-                },
-              ),
+          child: SizedBox(
+            width: totalWidth,
+            height: totalHeight,
+            child: Stack(
+              children: [
+                // Edge layer (behind nodes)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _EdgePainter(
+                      graph: _graph,
+                      color: Theme.of(context).colorScheme.primary,
+                      offsetX: offsetX,
+                    ),
+                  ),
+                ),
+                // Node widgets
+                for (var node in _graph.nodes)
+                  if (widget.graph.getNodeById(node.key!.value as String) !=
+                      null)
+                    Positioned(
+                      left: node.x + offsetX,
+                      top: node.y,
+                      child: SizedBox(
+                        width: _nodeWidth,
+                        height: _nodeHeight,
+                        child: _buildNodeWidget(
+                          widget.graph
+                              .getNodeById(node.key!.value as String)!,
+                        ),
+                      ),
+                    ),
+              ],
             ),
           ),
         );
@@ -142,7 +168,7 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
       onTap: () => widget.onNodeTap?.call(node.nodeId),
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
@@ -158,19 +184,15 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
             ),
           ],
         ),
-        constraints: const BoxConstraints(
-          minWidth: 120,
-          maxWidth: 180,
-        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              size: 32,
+              size: 28,
               color: color,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               node.name,
               style: TextStyle(
@@ -230,4 +252,59 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
         return Icons.warning;
     }
   }
+}
+
+/// Custom painter that draws edges from bottom-center of source node
+/// to top-center of target node with a smooth cubic bezier curve.
+class _EdgePainter extends CustomPainter {
+  final Graph graph;
+  final Color color;
+  final double offsetX;
+
+  _EdgePainter({required this.graph, required this.color, this.offsetX = 0});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final arrowPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    for (var edge in graph.edges) {
+      final src = edge.source;
+      final dst = edge.destination;
+
+      // Bottom-center of source
+      final startX = src.x + src.width / 2 + offsetX;
+      final startY = src.y + src.height;
+
+      // Top-center of target
+      final endX = dst.x + dst.width / 2 + offsetX;
+      final endY = dst.y;
+
+      // Smooth cubic bezier with control points at the midpoint height
+      final midY = (startY + endY) / 2;
+      final path = Path()
+        ..moveTo(startX, startY)
+        ..cubicTo(startX, midY, endX, midY, endX, endY);
+
+      canvas.drawPath(path, linePaint);
+
+      // Arrow head at target top
+      final arrowPath = Path()
+        ..moveTo(endX, endY)
+        ..lineTo(endX - 5, endY - 8)
+        ..lineTo(endX + 5, endY - 8)
+        ..close();
+      canvas.drawPath(arrowPath, arrowPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_EdgePainter old) =>
+      old.graph != graph || old.color != color || old.offsetX != offsetX;
 }

@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,9 +6,13 @@ import 'package:flutter/services.dart';
 class KeyboardShortcuts {
   KeyboardShortcuts._();
 
+  /// Whether the current platform uses the Meta (Cmd) key as modifier.
+  /// Works on all platforms including web.
+  static bool get _useMeta => defaultTargetPlatform == TargetPlatform.macOS;
+
   /// Get the modifier key name based on platform (Cmd on macOS, Ctrl elsewhere)
   static String get modifierKey {
-    if (Platform.isMacOS) {
+    if (_useMeta) {
       return '⌘';
     }
     return 'Ctrl';
@@ -26,50 +30,50 @@ class KeyboardShortcuts {
   /// Common shortcut: New/Create (Ctrl+N / Cmd+N)
   static SingleActivator get newShortcut => SingleActivator(
         LogicalKeyboardKey.keyN,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: Save (Ctrl+S / Cmd+S)
   static SingleActivator get saveShortcut => SingleActivator(
         LogicalKeyboardKey.keyS,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: Export (Ctrl+E / Cmd+E)
   static SingleActivator get exportShortcut => SingleActivator(
         LogicalKeyboardKey.keyE,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: Settings (Ctrl+, / Cmd+,)
   static SingleActivator get settingsShortcut => SingleActivator(
         LogicalKeyboardKey.comma,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: History (Ctrl+H / Cmd+H)
   static SingleActivator get historyShortcut => SingleActivator(
         LogicalKeyboardKey.keyH,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: Run/Execute (Ctrl+Enter / Cmd+Enter)
   static SingleActivator get runShortcut => SingleActivator(
         LogicalKeyboardKey.enter,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: Search (Ctrl+F / Cmd+F)
   static SingleActivator get searchShortcut => SingleActivator(
         LogicalKeyboardKey.keyF,
-        meta: Platform.isMacOS,
-        control: !Platform.isMacOS,
+        meta: _useMeta,
+        control: !_useMeta,
       );
 
   /// Common shortcut: Back (Escape)

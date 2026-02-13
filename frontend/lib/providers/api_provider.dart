@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
@@ -8,7 +9,8 @@ import '../config/constants.dart';
 /// Get the appropriate base URL for the current platform
 String _getPlatformAwareUrl(String defaultUrl) {
   // On Android emulator, localhost needs to be 10.0.2.2
-  if (Platform.isAndroid && defaultUrl.contains('localhost')) {
+  // Skip on web — dart:io's Platform is not available in the browser.
+  if (!kIsWeb && Platform.isAndroid && defaultUrl.contains('localhost')) {
     return defaultUrl.replaceAll('localhost', '10.0.2.2');
   }
   return defaultUrl;

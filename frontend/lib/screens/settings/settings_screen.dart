@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -729,7 +730,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   String _getConnectionGuide() {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       return '''For Android Emulator:
 * Use http://10.0.2.2:8888/api/v1
 * localhost is automatically converted to 10.0.2.2
@@ -738,7 +739,7 @@ For Physical Device:
 * Use your computer's IP address
 * Example: http://192.168.1.100:8888/api/v1
 * Make sure backend is running on 0.0.0.0:8888''';
-    } else if (Platform.isIOS) {
+    } else if (!kIsWeb && Platform.isIOS) {
       return '''For iOS Simulator:
 * Use http://localhost:8888/api/v1
 * Or http://127.0.0.1:8888/api/v1
