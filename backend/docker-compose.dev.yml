@@ -12,6 +12,7 @@ services:
       --reload-dir /app/api
       --reload-dir /app/services
       --reload-dir /app/models
+      --reload-dir /app/database
 
     # Override depends_on to not require healthcheck in dev
     depends_on:
@@ -34,11 +35,13 @@ services:
       - ./api:/app/api:cached
       - ./services:/app/services:cached
       - ./models:/app/models:cached
+      - ./database:/app/database:cached
       - ./config.py:/app/config.py:cached
       - ./main.py:/app/main.py:cached
       # Mount tests for `make test`
       - ./tests:/app/tests:cached
       # Bind mount for reports in dev (easier to inspect)
+      # DB file (aegis.db) also lives here for persistence
       - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
 
     healthcheck:

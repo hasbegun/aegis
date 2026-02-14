@@ -1,8 +1,8 @@
 """
-File-based storage for user config templates.
+Config template storage backed by SQLite database.
 
-Templates are stored as individual JSON files in a configurable directory
-(default: alongside garak reports at /data/config_templates).
+Templates are stored in the config_templates table. Falls back to
+file-based storage if the database is not available.
 """
 import json
 import logging
@@ -27,10 +27,20 @@ def _slug(name: str) -> str:
     return re.sub(r"[^\w-]", "_", name.strip().lower())
 
 
+def _db_available() -> bool:
+    """Check if the database has been initialized."""
+    try:
+        from database.session import _SessionFactory
+        return _SessionFactory is not None
+    except ImportError:
+        return False
+
+
 class ConfigTemplateStore:
-    """CRUD operations for user config templates stored as JSON files."""
+    """CRUD operations for user config templates backed by SQLite."""
 
     def __init__(self, templates_dir: Optional[Path] = None):
+        # Keep file dir for fallback compatibility
         self._dir = templates_dir or (settings.garak_reports_path.parent / "config_templates")
         self._dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Config templates directory: {self._dir}")
@@ -40,6 +50,7 @@ class ConfigTemplateStore:
     # ------------------------------------------------------------------
 
     def _file_for(self, name: str) -> Path:
+        """Return the file path for a template by name (for fallback/tests)."""
         return self._dir / f"{_slug(name)}.json"
 
     @staticmethod
@@ -57,11 +68,24 @@ class ConfigTemplateStore:
         return None
 
     # ------------------------------------------------------------------
-    # CRUD
+    # CRUD (DB-backed with file fallback)
     # ------------------------------------------------------------------
 
     def list_templates(self) -> List[Dict[str, Any]]:
         """Return all saved templates, sorted by updated_at descending."""
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import ConfigTemplateRow
+                with get_db() as db:
+                    rows = db.query(ConfigTemplateRow).order_by(
+                        ConfigTemplateRow.updated_at.desc()
+                    ).all()
+                    return [row.to_dict() for row in rows]
+            except Exception as e:
+                logger.warning(f"DB query failed for templates, falling back to files: {e}")
+
+        # Fallback: file-based
         templates = []
         for path in self._dir.glob("*.json"):
             try:
@@ -74,7 +98,20 @@ class ConfigTemplateStore:
 
     def get_template(self, name: str) -> Optional[Dict[str, Any]]:
         """Get a template by name. Returns None if not found."""
-        path = self._file_for(name)
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import ConfigTemplateRow
+                with get_db() as db:
+                    row = db.query(ConfigTemplateRow).filter_by(name=name.strip()).first()
+                    if row:
+                        return row.to_dict()
+                    return None
+            except Exception as e:
+                logger.warning(f"DB query failed for template '{name}', falling back to file: {e}")
+
+        # Fallback: file-based
+        path = self._dir / f"{_slug(name)}.json"
         if not path.exists():
             return None
         try:
@@ -94,13 +131,39 @@ class ConfigTemplateStore:
         if error:
             raise ValueError(error)
 
-        path = self._file_for(name)
+        now = datetime.now().isoformat()
+        name = name.strip()
+
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import ConfigTemplateRow
+                with get_db() as db:
+                    existing = db.query(ConfigTemplateRow).filter_by(name=name).first()
+                    if existing:
+                        raise ValueError(f"Template '{name}' already exists. Use update to modify it.")
+                    row = ConfigTemplateRow(
+                        name=name,
+                        description=description,
+                        config_json=json.dumps(config),
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    db.add(row)
+                    db.commit()
+                    return row.to_dict()
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.warning(f"DB save failed for template '{name}', falling back to file: {e}")
+
+        # Fallback: file-based
+        path = self._dir / f"{_slug(name)}.json"
         if path.exists():
             raise ValueError(f"Template '{name}' already exists. Use update to modify it.")
 
-        now = datetime.now().isoformat()
         template = {
-            "name": name.strip(),
+            "name": name,
             "description": description,
             "config": config,
             "created_at": now,
@@ -117,7 +180,28 @@ class ConfigTemplateStore:
         description: Optional[str] = ...,  # sentinel: ... means "not provided"
     ) -> Dict[str, Any]:
         """Update an existing template. Raises ValueError if not found."""
-        path = self._file_for(name)
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import ConfigTemplateRow
+                with get_db() as db:
+                    row = db.query(ConfigTemplateRow).filter_by(name=name.strip()).first()
+                    if not row:
+                        raise ValueError(f"Template '{name}' not found")
+                    if config is not None:
+                        row.config_json = json.dumps(config)
+                    if description is not ...:
+                        row.description = description
+                    row.updated_at = datetime.now().isoformat()
+                    db.commit()
+                    return row.to_dict()
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.warning(f"DB update failed for template '{name}', falling back to file: {e}")
+
+        # Fallback: file-based
+        path = self._dir / f"{_slug(name)}.json"
         if not path.exists():
             raise ValueError(f"Template '{name}' not found")
 
@@ -138,7 +222,22 @@ class ConfigTemplateStore:
 
     def delete_template(self, name: str) -> bool:
         """Delete a template. Returns True if deleted, False if not found."""
-        path = self._file_for(name)
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import ConfigTemplateRow
+                with get_db() as db:
+                    deleted = db.query(ConfigTemplateRow).filter_by(name=name.strip()).delete()
+                    db.commit()
+                    if deleted:
+                        logger.info(f"Deleted config template: {name}")
+                        return True
+                    return False
+            except Exception as e:
+                logger.warning(f"DB delete failed for template '{name}', falling back to file: {e}")
+
+        # Fallback: file-based
+        path = self._dir / f"{_slug(name)}.json"
         if not path.exists():
             return False
         try:

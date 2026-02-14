@@ -1,10 +1,15 @@
 """
-Service for managing custom garak probes
+Service for managing custom garak probes.
+
+Metadata is stored in the SQLite database (custom_probes table) with
+fallback to the legacy metadata.json file when the DB is unavailable.
+Probe .py files always live on disk.
 """
 import ast
 import os
 import re
 import json
+import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -20,6 +25,17 @@ from models.schemas import (
     CustomProbeListResponse,
     CustomProbeGetResponse,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _db_available() -> bool:
+    """Check if the database has been initialized."""
+    try:
+        from database.session import _SessionFactory
+        return _SessionFactory is not None
+    except ImportError:
+        return False
 
 
 class CustomProbeService:
@@ -49,14 +65,25 @@ class CustomProbeService:
             init_file.write_text('"""Custom garak probes"""\n')
 
     def _read_metadata(self) -> Dict[str, Any]:
-        """Read metadata from file"""
+        """Read metadata — DB-backed with file fallback."""
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import CustomProbeRow
+                with get_db() as db:
+                    rows = db.query(CustomProbeRow).all()
+                    probes = {row.name: row.to_dict() for row in rows}
+                    return {"probes": probes}
+            except Exception as e:
+                logger.warning(f"DB read failed for probes, falling back to file: {e}")
+        # Fallback: file-based
         try:
             return json.loads(self.metadata_file.read_text())
         except Exception:
             return {"probes": {}}
 
     def _write_metadata(self, metadata: Dict[str, Any]):
-        """Write metadata to file"""
+        """Write metadata to file (fallback only — DB writes happen in CRUD methods)."""
         self.metadata_file.write_text(json.dumps(metadata, indent=2))
 
     def _is_valid_python_identifier(self, name: str) -> bool:
@@ -176,40 +203,82 @@ class CustomProbeService:
         filename = re.sub(r'(?<!^)(?=[A-Z])', '_', request.name).lower()
         file_path = self.custom_probes_dir / f"{filename}.py"
 
-        # Check if probe already exists
-        metadata = self._read_metadata()
-        if request.name in metadata["probes"]:
-            raise ValueError(f"Probe '{request.name}' already exists")
-
-        # Write probe file
-        file_path.write_text(request.code)
-
-        # Update metadata
         now = datetime.utcnow().isoformat()
+        goal = None
+        if validation.probe_info:
+            classes = validation.probe_info.get('classes', [])
+            if classes:
+                goal = classes[0].get('docstring')
+
         probe_metadata = {
             "name": request.name,
             "file_path": str(file_path),
             "description": request.description,
+            "goal": goal,
             "created_at": now,
             "updated_at": now,
         }
 
-        # Extract additional info from validation
-        if validation.probe_info:
-            classes = validation.probe_info.get('classes', [])
-            if classes:
-                probe_metadata['goal'] = classes[0].get('docstring')
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import CustomProbeRow
+                with get_db() as db:
+                    existing = db.query(CustomProbeRow).filter_by(name=request.name).first()
+                    if existing:
+                        raise ValueError(f"Probe '{request.name}' already exists")
+                    # Write probe file first
+                    file_path.write_text(request.code)
+                    row = CustomProbeRow(
+                        name=request.name,
+                        description=request.description,
+                        file_path=str(file_path),
+                        goal=goal,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    db.add(row)
+                    db.commit()
+                    logger.info(f"Created custom probe: {request.name}")
+                    return CustomProbe(**probe_metadata)
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.warning(f"DB save failed for probe '{request.name}', falling back to file: {e}")
 
+        # Fallback: file-based
+        metadata = self._read_metadata()
+        if request.name in metadata["probes"]:
+            raise ValueError(f"Probe '{request.name}' already exists")
+
+        file_path.write_text(request.code)
         metadata["probes"][request.name] = probe_metadata
         self._write_metadata(metadata)
+        logger.info(f"Created custom probe (file fallback): {request.name}")
 
         return CustomProbe(**probe_metadata)
 
     def list_probes(self) -> CustomProbeListResponse:
-        """List all custom probes"""
+        """List all custom probes — DB-backed with file fallback."""
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import CustomProbeRow
+                with get_db() as db:
+                    rows = db.query(CustomProbeRow).order_by(
+                        CustomProbeRow.updated_at.desc()
+                    ).all()
+                    probes = [CustomProbe(**row.to_dict()) for row in rows]
+                    return CustomProbeListResponse(
+                        probes=probes,
+                        total_count=len(probes),
+                    )
+            except Exception as e:
+                logger.warning(f"DB query failed for probes, falling back to file: {e}")
+
+        # Fallback: file-based
         metadata = self._read_metadata()
         probes = []
-
         for probe_data in metadata["probes"].values():
             probes.append(CustomProbe(**probe_data))
 
@@ -219,16 +288,30 @@ class CustomProbeService:
         )
 
     def get_probe(self, name: str) -> CustomProbeGetResponse:
-        """Get a specific custom probe"""
-        metadata = self._read_metadata()
+        """Get a specific custom probe — DB-backed with file fallback."""
+        probe_data = None
 
-        if name not in metadata["probes"]:
-            raise ValueError(f"Probe '{name}' not found")
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import CustomProbeRow
+                with get_db() as db:
+                    row = db.query(CustomProbeRow).filter_by(name=name).first()
+                    if row:
+                        probe_data = row.to_dict()
+            except Exception as e:
+                logger.warning(f"DB query failed for probe '{name}', falling back to file: {e}")
 
-        probe_data = metadata["probes"][name]
+        # Fallback: file-based
+        if probe_data is None:
+            metadata = self._read_metadata()
+            if name not in metadata["probes"]:
+                raise ValueError(f"Probe '{name}' not found")
+            probe_data = metadata["probes"][name]
+
         probe = CustomProbe(**probe_data)
 
-        # Read code from file
+        # Read code from .py file on disk
         file_path = Path(probe_data["file_path"])
         if not file_path.exists():
             raise ValueError(f"Probe file not found: {file_path}")
@@ -241,49 +324,93 @@ class CustomProbeService:
         )
 
     def update_probe(self, name: str, request: CustomProbeCreateRequest) -> CustomProbe:
-        """Update an existing custom probe"""
-        metadata = self._read_metadata()
-
-        if name not in metadata["probes"]:
-            raise ValueError(f"Probe '{name}' not found")
-
+        """Update an existing custom probe — DB-backed with file fallback."""
         # Validate code
         validation = self.validate_code(CustomProbeValidateRequest(code=request.code))
         if not validation.valid:
             error_messages = [f"Line {e.line}: {e.message}" if e.line else e.message for e in validation.errors]
             raise ValueError(f"Invalid probe code: {'; '.join(error_messages)}")
 
-        # Update file
-        file_path = Path(metadata["probes"][name]["file_path"])
-        file_path.write_text(request.code)
-
-        # Update metadata
-        metadata["probes"][name]["description"] = request.description
-        metadata["probes"][name]["updated_at"] = datetime.utcnow().isoformat()
-
-        # Extract additional info from validation
+        goal = None
         if validation.probe_info:
             classes = validation.probe_info.get('classes', [])
             if classes:
-                metadata["probes"][name]['goal'] = classes[0].get('docstring')
+                goal = classes[0].get('docstring')
+
+        now = datetime.utcnow().isoformat()
+
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import CustomProbeRow
+                with get_db() as db:
+                    row = db.query(CustomProbeRow).filter_by(name=name).first()
+                    if not row:
+                        raise ValueError(f"Probe '{name}' not found")
+                    # Update .py file on disk
+                    file_path = Path(row.file_path)
+                    file_path.write_text(request.code)
+                    # Update DB metadata
+                    row.description = request.description
+                    row.goal = goal
+                    row.updated_at = now
+                    db.commit()
+                    logger.info(f"Updated custom probe: {name}")
+                    return CustomProbe(**row.to_dict())
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.warning(f"DB update failed for probe '{name}', falling back to file: {e}")
+
+        # Fallback: file-based
+        metadata = self._read_metadata()
+        if name not in metadata["probes"]:
+            raise ValueError(f"Probe '{name}' not found")
+
+        file_path = Path(metadata["probes"][name]["file_path"])
+        file_path.write_text(request.code)
+
+        metadata["probes"][name]["description"] = request.description
+        metadata["probes"][name]["updated_at"] = now
+        if goal is not None:
+            metadata["probes"][name]["goal"] = goal
 
         self._write_metadata(metadata)
 
         return CustomProbe(**metadata["probes"][name])
 
     def delete_probe(self, name: str):
-        """Delete a custom probe"""
-        metadata = self._read_metadata()
+        """Delete a custom probe — DB-backed with file fallback."""
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import CustomProbeRow
+                with get_db() as db:
+                    row = db.query(CustomProbeRow).filter_by(name=name).first()
+                    if not row:
+                        raise ValueError(f"Probe '{name}' not found")
+                    # Delete .py file from disk
+                    file_path = Path(row.file_path)
+                    if file_path.exists():
+                        file_path.unlink()
+                    db.delete(row)
+                    db.commit()
+                    logger.info(f"Deleted custom probe: {name}")
+                    return
+            except ValueError:
+                raise
+            except Exception as e:
+                logger.warning(f"DB delete failed for probe '{name}', falling back to file: {e}")
 
+        # Fallback: file-based
+        metadata = self._read_metadata()
         if name not in metadata["probes"]:
             raise ValueError(f"Probe '{name}' not found")
 
-        # Delete file
         file_path = Path(metadata["probes"][name]["file_path"])
         if file_path.exists():
             file_path.unlink()
 
-        # Remove from metadata
         del metadata["probes"][name]
         self._write_metadata(metadata)
 

@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 REPORT_CACHE_TTL = 300  # 5 minutes
 
 
+def _db_available() -> bool:
+    """Check if the database has been initialized."""
+    try:
+        from database.session import _SessionFactory
+        return _SessionFactory is not None
+    except ImportError:
+        return False
+
+
 class MaxConcurrentScansError(Exception):
     """Raised when the concurrent scan limit is reached."""
 
@@ -45,13 +54,107 @@ class GarakWrapper:
         self.garak_reports_dir = settings.garak_reports_path
         # Layer 1: raw JSONL entries  scan_id → {"entries": [...], "mtime": float, "cached_at": float}
         self._report_cache: Dict[str, Dict[str, Any]] = {}
-        # Layer 2: parsed scan info  scan_id → {"data": {...}, "mtime": float}
-        self._scan_info_cache: Dict[str, Dict[str, Any]] = {}
+        # Layer 2 (scan info) removed — DB handles metadata queries now
         # Layer 3: full results      scan_id → {"data": {...}, "mtime": float}
         self._results_cache: Dict[str, Dict[str, Any]] = {}
         self._cache_ttl = cache_ttl
         logger.info(f"Garak service URL: {self.garak_service_url}")
         logger.info(f"Garak reports directory: {self.garak_reports_dir}")
+
+    # ------------------------------------------------------------------
+    # Database sync helpers
+    # ------------------------------------------------------------------
+
+    def _sync_scan_to_db(self, scan_id: str, scan_info: Optional[Dict[str, Any]] = None) -> None:
+        """Write current scan state to the database (upsert).
+
+        Called at key lifecycle points: start, complete, error, cancel, report.
+        """
+        if not _db_available():
+            return
+
+        if scan_info is None:
+            scan_info = self.active_scans.get(scan_id)
+        if not scan_info:
+            return
+
+        try:
+            from database.session import get_db
+            from database.models import Scan
+
+            status = scan_info.get("status", ScanStatus.PENDING)
+            status_str = status.value if hasattr(status, "value") else str(status)
+            passed = scan_info.get("passed", 0)
+            failed = scan_info.get("failed", 0)
+            total = passed + failed
+            pass_rate = (passed / total * 100.0) if total > 0 else None
+
+            config = scan_info.get("config")
+            config_json = None
+            if config:
+                config_json = json.dumps(
+                    config.model_dump() if hasattr(config, "model_dump") else config
+                )
+
+            with get_db() as db:
+                existing = db.query(Scan).filter_by(id=scan_id).first()
+                if existing:
+                    existing.status = status_str
+                    existing.started_at = scan_info.get("started_at") or scan_info.get("created_at") or existing.started_at
+                    existing.completed_at = scan_info.get("completed_at") or existing.completed_at
+                    existing.passed = passed
+                    existing.failed = failed
+                    existing.pass_rate = pass_rate
+                    existing.total_probes = scan_info.get("total_probes", existing.total_probes or 0)
+                    existing.error_message = scan_info.get("error_message") or existing.error_message
+                    existing.report_path = scan_info.get("jsonl_report_path") or existing.report_path
+                    existing.html_report_path = scan_info.get("html_report_path") or existing.html_report_path
+                    if config_json and not existing.config_json:
+                        existing.config_json = config_json
+                else:
+                    target_type = "unknown"
+                    target_name = "unknown"
+                    if config:
+                        cfg = config if isinstance(config, dict) else (
+                            config.model_dump() if hasattr(config, "model_dump") else {}
+                        )
+                        target_type = cfg.get("target_type", "unknown")
+                        target_name = cfg.get("target_name", "unknown")
+
+                    scan_row = Scan(
+                        id=scan_id,
+                        target_type=target_type,
+                        target_name=target_name,
+                        status=status_str,
+                        started_at=scan_info.get("started_at") or scan_info.get("created_at"),
+                        completed_at=scan_info.get("completed_at"),
+                        total_probes=scan_info.get("total_probes", 0),
+                        passed=passed,
+                        failed=failed,
+                        pass_rate=pass_rate,
+                        error_message=scan_info.get("error_message"),
+                        report_path=scan_info.get("jsonl_report_path"),
+                        html_report_path=scan_info.get("html_report_path"),
+                        config_json=config_json,
+                        created_at=scan_info.get("created_at"),
+                    )
+                    db.add(scan_row)
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to sync scan {scan_id} to DB: {e}")
+
+    def _delete_scan_from_db(self, scan_id: str) -> None:
+        """Remove a scan row from the database."""
+        if not _db_available():
+            return
+        try:
+            from database.session import get_db
+            from database.models import Scan
+            with get_db() as db:
+                db.query(Scan).filter_by(id=scan_id).delete()
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to delete scan {scan_id} from DB: {e}")
 
     # ------------------------------------------------------------------
     # Health / Version / Plugins  (delegate to garak service)
@@ -152,6 +255,9 @@ class GarakWrapper:
             "error_message": None,
         }
 
+        # Persist initial scan state to DB
+        self._sync_scan_to_db(scan_id)
+
         # Start background task to consume SSE progress stream
         asyncio.create_task(self._consume_progress_stream(scan_id))
 
@@ -189,6 +295,7 @@ class GarakWrapper:
                                 f"Garak service error: {response.status_code}"
                             )
                             scan_info["completed_at"] = datetime.now().isoformat()
+                            self._sync_scan_to_db(scan_id)
                             return
 
                         async for line in response.aiter_lines():
@@ -211,6 +318,7 @@ class GarakWrapper:
                     scan_info["status"] = ScanStatus.COMPLETED
                     scan_info["progress"] = 100.0
                     scan_info["completed_at"] = datetime.now().isoformat()
+                self._sync_scan_to_db(scan_id)
                 return
 
             except Exception as e:
@@ -224,6 +332,7 @@ class GarakWrapper:
                         f"Lost connection to garak service: {e}"
                     )
                     scan_info["completed_at"] = datetime.now().isoformat()
+                    self._sync_scan_to_db(scan_id)
 
     def _update_scan_from_event(self, scan_id: str, event: dict):
         """Update local scan state from an SSE event."""
@@ -269,6 +378,7 @@ class GarakWrapper:
                 scan_info["html_report_path"] = final_path
             elif rtype == "jsonl":
                 scan_info["jsonl_report_path"] = final_path
+            self._sync_scan_to_db(scan_id)
 
         elif etype == "complete":
             scan_info["status"] = ScanStatus.COMPLETED
@@ -276,11 +386,13 @@ class GarakWrapper:
             scan_info["completed_at"] = datetime.now().isoformat()
             scan_info["passed"] = event.get("passed", scan_info.get("passed", 0))
             scan_info["failed"] = event.get("failed", scan_info.get("failed", 0))
+            self._sync_scan_to_db(scan_id)
 
         elif etype == "error":
             scan_info["status"] = ScanStatus.FAILED
             scan_info["error_message"] = event.get("message")
             scan_info["completed_at"] = datetime.now().isoformat()
+            self._sync_scan_to_db(scan_id)
 
         elif etype == "output":
             scan_info.setdefault("output_lines", []).append(
@@ -357,6 +469,7 @@ class GarakWrapper:
                 if response.status_code == 200:
                     scan_info["status"] = ScanStatus.CANCELLED
                     scan_info["completed_at"] = datetime.now().isoformat()
+                    self._sync_scan_to_db(scan_id)
                     logger.info(f"Scan {scan_id} cancelled")
                     return True
                 else:
@@ -373,12 +486,24 @@ class GarakWrapper:
 
     def get_scan_status(self, scan_id: str) -> Optional[Dict[str, Any]]:
         """Get current status of a scan (active or historical)."""
-        # Check active scans first
+        # Check active scans first (real-time data)
         scan_info = self.active_scans.get(scan_id)
         if scan_info:
             return {k: v for k, v in scan_info.items() if k != "process"}
 
-        # Check historical scans on disk
+        # Check database for historical scans
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import Scan
+                with get_db() as db:
+                    row = db.query(Scan).filter_by(id=scan_id).first()
+                    if row:
+                        return row.to_dict()
+            except Exception as e:
+                logger.warning(f"DB lookup failed for scan {scan_id}, falling back to file: {e}")
+
+        # Fallback: check historical scans on disk
         if self.garak_reports_dir.exists():
             report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
             if report_file.exists():
@@ -390,6 +515,9 @@ class GarakWrapper:
         """Delete a scan and all its associated reports."""
         # Invalidate cache
         self.invalidate_cache(scan_id)
+
+        # Remove from database
+        self._delete_scan_from_db(scan_id)
 
         # Remove from active scans
         if scan_id in self.active_scans:
@@ -425,15 +553,36 @@ class GarakWrapper:
         return True
 
     def get_all_scans(self) -> List[Dict[str, Any]]:
-        """Get information about all scans (active and historical)."""
-        all_scans = []
+        """Get information about all scans (active and historical).
 
-        # Active scans
+        Active scans come from in-memory dict (real-time).
+        Historical scans come from DB (fast indexed query).
+        Falls back to file-based scanning if DB is unavailable.
+        """
+        all_scans = []
+        active_ids = set()
+
+        # Active scans (real-time data)
         for scan_info in self.active_scans.values():
             scan_copy = {k: v for k, v in scan_info.items() if k != "process"}
             all_scans.append(scan_copy)
+            active_ids.add(scan_info.get("scan_id"))
 
-        # Historical scans from reports directory
+        # Historical scans from database
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import Scan
+                with get_db() as db:
+                    rows = db.query(Scan).order_by(Scan.started_at.desc()).all()
+                    for row in rows:
+                        if row.id not in active_ids:
+                            all_scans.append(row.to_dict())
+                return sorted(all_scans, key=lambda x: x.get("started_at", ""), reverse=True)
+            except Exception as e:
+                logger.warning(f"DB query failed for scan list, falling back to files: {e}")
+
+        # Fallback: historical scans from reports directory
         if not self.garak_reports_dir.exists():
             logger.warning(f"Reports directory not found: {self.garak_reports_dir}")
             return sorted(all_scans, key=lambda x: x.get("started_at", ""), reverse=True)
@@ -443,7 +592,7 @@ class GarakWrapper:
             for report_file in report_files:
                 try:
                     scan_id = report_file.stem.replace("garak.", "").replace(".report", "")
-                    if scan_id in self.active_scans:
+                    if scan_id in active_ids:
                         continue
                     scan_info = self._parse_report_file(report_file, scan_id)
                     if scan_info:
@@ -508,31 +657,19 @@ class GarakWrapper:
     def invalidate_cache(self, scan_id: str):
         """Remove all cached data for a scan."""
         self._report_cache.pop(scan_id, None)
-        self._scan_info_cache.pop(scan_id, None)
         self._results_cache.pop(scan_id, None)
 
     def clear_cache(self):
         """Remove all cached data."""
         self._report_cache.clear()
-        self._scan_info_cache.clear()
         self._results_cache.clear()
 
     def _parse_report_file(self, report_file: Path, scan_id: str) -> Optional[Dict[str, Any]]:
         """Parse a garak report.jsonl file to extract scan information.
 
-        Uses Layer 2 cache (scan info) when available, falling back to
-        Layer 1 (raw entries) for processing.
+        This is the file fallback path — only used when the DB is unavailable.
+        Uses Layer 1 (raw entries) for processing.
         """
-        try:
-            file_mtime = report_file.stat().st_mtime
-        except OSError:
-            return None
-
-        # Check Layer 2 cache
-        cached = self._scan_info_cache.get(scan_id)
-        if cached and cached["mtime"] == file_mtime:
-            return cached["data"]
-
         entries = self._get_report_entries(scan_id)
         if not entries:
             return None
@@ -571,11 +708,12 @@ class GarakWrapper:
                     scan_info["digest"] = entry.get("eval", {})
 
             if not scan_info["started_at"]:
-                file_mtime_dt = datetime.fromtimestamp(file_mtime)
-                scan_info["started_at"] = file_mtime_dt.isoformat()
-
-            # Store in Layer 2 cache
-            self._scan_info_cache[scan_id] = {"data": scan_info, "mtime": file_mtime}
+                try:
+                    file_mtime = report_file.stat().st_mtime
+                    file_mtime_dt = datetime.fromtimestamp(file_mtime)
+                    scan_info["started_at"] = file_mtime_dt.isoformat()
+                except OSError:
+                    pass
 
             return scan_info
 

@@ -403,29 +403,20 @@ class TestCacheEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# Layer 2: _scan_info_cache (parsed scan info from _parse_report_file)
+# Layer 2 (scan info cache) was removed in H1 — DB handles metadata queries.
 # ---------------------------------------------------------------------------
 
-class TestScanInfoCache:
-    """Test Layer 2 caching of parsed scan info."""
+class TestParseReportFile:
+    """Test _parse_report_file (no longer cached, always re-parses)."""
 
-    def test_parse_populates_scan_info_cache(self, wrapper, reports_dir):
+    def test_parse_returns_correct_data(self, wrapper, reports_dir):
         report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
-        wrapper._parse_report_file(report_file, SCAN_ID)
-        assert SCAN_ID in wrapper._scan_info_cache
-        cached = wrapper._scan_info_cache[SCAN_ID]
-        assert "data" in cached
-        assert "mtime" in cached
-        assert cached["data"]["passed"] == 2
+        result = wrapper._parse_report_file(report_file, SCAN_ID)
+        assert result is not None
+        assert result["passed"] == 2
+        assert result["failed"] == 1
 
-    def test_second_parse_returns_cached_data(self, wrapper, reports_dir):
-        """Second call should return cached data without re-processing."""
-        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
-        first = wrapper._parse_report_file(report_file, SCAN_ID)
-        second = wrapper._parse_report_file(report_file, SCAN_ID)
-        assert first is second  # exact same dict object
-
-    def test_mtime_change_refreshes_scan_info(self, wrapper, reports_dir):
+    def test_parse_detects_file_changes(self, wrapper, reports_dir):
         report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
         first = wrapper._parse_report_file(report_file, SCAN_ID)
 
@@ -436,22 +427,7 @@ class TestScanInfoCache:
         report_file.write_text(_make_report_jsonl(entries))
 
         second = wrapper._parse_report_file(report_file, SCAN_ID)
-        assert second is not first
         assert second["failed"] == 2  # was 1, now 2
-
-    def test_invalidate_clears_scan_info_cache(self, wrapper, reports_dir):
-        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
-        wrapper._parse_report_file(report_file, SCAN_ID)
-        assert SCAN_ID in wrapper._scan_info_cache
-
-        wrapper.invalidate_cache(SCAN_ID)
-        assert SCAN_ID not in wrapper._scan_info_cache
-
-    def test_clear_cache_clears_scan_info(self, wrapper, reports_dir):
-        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
-        wrapper._parse_report_file(report_file, SCAN_ID)
-        wrapper.clear_cache()
-        assert len(wrapper._scan_info_cache) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -525,19 +501,15 @@ class TestResultsCache:
         result = wrapper.get_scan_results("nonexistent")
         assert result is None
 
-    def test_all_three_layers_cleared_together(self, wrapper, reports_dir):
-        """invalidate_cache should clear all three cache layers."""
-        report_file = reports_dir / f"garak.{SCAN_ID}.report.jsonl"
+    def test_both_cache_layers_cleared_together(self, wrapper, reports_dir):
+        """invalidate_cache should clear both remaining cache layers."""
         wrapper._get_report_entries(SCAN_ID)
-        wrapper._parse_report_file(report_file, SCAN_ID)
         wrapper.get_scan_results(SCAN_ID)
 
         assert SCAN_ID in wrapper._report_cache
-        assert SCAN_ID in wrapper._scan_info_cache
         assert SCAN_ID in wrapper._results_cache
 
         wrapper.invalidate_cache(SCAN_ID)
 
         assert SCAN_ID not in wrapper._report_cache
-        assert SCAN_ID not in wrapper._scan_info_cache
         assert SCAN_ID not in wrapper._results_cache

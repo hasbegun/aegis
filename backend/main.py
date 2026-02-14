@@ -66,6 +66,12 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting Garak Backend on {settings.host}:{settings.port}")
 
+    # Initialize database (SQLite on shared volume, persists across restarts)
+    from database.session import init_db
+    from database.migrations import run_backfill_if_needed
+    init_db()
+    run_backfill_if_needed()
+
     # Initialize model discovery (fetches Ollama models)
     logger.info("Initializing model discovery...")
     await initialize_model_discovery()
