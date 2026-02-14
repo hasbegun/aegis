@@ -6,8 +6,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Minimal system dependencies (no Rust, no git - garak is in its own container)
+# libpq5 is the PostgreSQL client lib needed by psycopg2-binary at runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip

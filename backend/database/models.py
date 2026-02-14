@@ -34,8 +34,11 @@ class Scan(Base):
     failed = Column(Integer, default=0)
     pass_rate = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
-    report_path = Column(String, nullable=True)  # relative path to JSONL
-    html_report_path = Column(String, nullable=True)
+    report_path = Column(String, nullable=True)  # local path to JSONL (legacy/fallback)
+    html_report_path = Column(String, nullable=True)  # local path to HTML (legacy/fallback)
+    report_key = Column(String, nullable=True)  # object store key for JSONL
+    html_report_key = Column(String, nullable=True)  # object store key for HTML
+    probe_stats_json = Column(Text, nullable=True)  # materialized per-probe stats as JSON
     config_json = Column(Text, nullable=True)  # ScanConfig snapshot as JSON
     created_at = Column(String, nullable=True)
 
@@ -61,6 +64,8 @@ class Scan(Base):
             "progress": 100.0 if self.status == "completed" else 0.0,
             "html_report_path": self.html_report_path,
             "jsonl_report_path": self.report_path,
+            "report_key": self.report_key,
+            "html_report_key": self.html_report_key,
             "error_message": self.error_message,
         }
 

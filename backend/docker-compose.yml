@@ -1,6 +1,44 @@
 name: aegis
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aegis-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aegis}
+      POSTGRES_USER: ${POSTGRES_USER:-aegis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis-secret}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      - aegis-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: aegis-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aegis}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aegis-secret}
+    volumes:
+      - minio-data:/data
+    networks:
+      - aegis-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -17,18 +55,30 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       LOG_FORMAT: "${LOG_FORMAT:-json}"
 
+      # Database (PostgreSQL)
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis-secret}@postgres:5432/${POSTGRES_DB:-aegis}"
+
+      # Object Storage (Minio)
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-minio}"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-aegis}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-aegis-secret}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-aegis-reports}"
+      MINIO_SECURE: "false"
+
       # Garak Configuration
-      GARAK_REPORTS_DIR: "/data/garak_reports"
+      GARAK_REPORTS_DIR: "/tmp/garak_reports"
       GARAK_SERVICE_URL: "http://garak:9090"
 
       # Ollama (for model discovery / validation)
       OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
-    volumes:
-      # Shared report volume (rw needed for scan deletion)
-      - garak-reports:/data/garak_reports
     networks:
       - aegis-network
     depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
       garak:
         condition: service_healthy
     restart: unless-stopped
@@ -50,6 +100,13 @@ services:
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       LOG_FORMAT: "${LOG_FORMAT:-json}"
 
+      # Object Storage (Minio)
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-aegis}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-aegis-secret}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-aegis-reports}"
+      MINIO_SECURE: "false"
+
       # Ollama host (garak needs this to connect to LLMs)
       OLLAMA_HOST: "${OLLAMA_HOST:-http://host.docker.internal:11434}"
 
@@ -63,10 +120,13 @@ services:
       MISTRAL_API_KEY: "${MISTRAL_API_KEY:-}"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
     volumes:
-      # Shared report volume (read-write for garak)
-      - garak-reports:/data/garak_reports
+      # Local-only scratch space for garak CLI output before upload to Minio
+      - garak-scratch:/data/garak_reports
     networks:
       - aegis-network
+    depends_on:
+      minio:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')"]
@@ -76,7 +136,11 @@ services:
       start_period: 60s
 
 volumes:
-  garak-reports:
+  pg-data:
+    driver: local
+  minio-data:
+    driver: local
+  garak-scratch:
     driver: local
 
 networks:

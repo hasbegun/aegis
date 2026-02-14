@@ -314,15 +314,11 @@ async def get_scan_results(scan_id: str):
 @router.get("/{scan_id}/report/html")
 async def get_html_report(scan_id: str):
     """
-    Get HTML report for a scan
+    Get HTML report for a scan.
 
-    Args:
-        scan_id: Unique scan identifier
-
-    Returns:
-        HTML report file
+    Tries local filesystem first, then falls back to object store (Minio).
     """
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, StreamingResponse
     from pathlib import Path
 
     scan_info = garak_wrapper.get_scan_status(scan_id)
@@ -330,39 +326,45 @@ async def get_html_report(scan_id: str):
     if not scan_info:
         raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found")
 
+    # Try local filesystem first
     html_report_path = scan_info.get('html_report_path')
+    if html_report_path:
+        report_file = Path(html_report_path)
+        if report_file.exists():
+            return FileResponse(
+                path=str(report_file),
+                media_type="text/html",
+                filename=f"scan_{scan_id}_report.html"
+            )
 
-    if not html_report_path:
-        raise HTTPException(
-            status_code=404,
-            detail="HTML report not available for this scan"
-        )
+    # Fallback: read from object store
+    html_key = scan_info.get('html_report_key') or f"{scan_id}/garak.{scan_id}.report.html"
+    try:
+        from services.object_store import object_store_available, get_object_store
+        if object_store_available():
+            store = get_object_store()
+            stream = store.get_stream(html_key)
+            if stream is not None:
+                return StreamingResponse(
+                    stream,
+                    media_type="text/html",
+                    headers={"Content-Disposition": f'inline; filename="scan_{scan_id}_report.html"'},
+                )
+    except Exception as e:
+        logger.error(f"Error reading HTML report from object store: {e}")
 
-    # Check if file exists
-    report_file = Path(html_report_path)
-    if not report_file.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Report file not found: {html_report_path}"
-        )
-
-    return FileResponse(
-        path=str(report_file),
-        media_type="text/html",
-        filename=f"scan_{scan_id}_report.html"
+    raise HTTPException(
+        status_code=404,
+        detail="HTML report not available for this scan"
     )
 
 
 @router.get("/{scan_id}/report/detailed")
 async def get_detailed_report(scan_id: str):
     """
-    Get detailed HTML report for a scan
+    Get detailed HTML report for a scan (inline content).
 
-    Args:
-        scan_id: Unique scan identifier
-
-    Returns:
-        HTML report content
+    Tries local filesystem first, then falls back to object store (Minio).
     """
     from fastapi.responses import HTMLResponse
     from pathlib import Path
@@ -372,35 +374,33 @@ async def get_detailed_report(scan_id: str):
     if not scan_info:
         raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found")
 
+    # Try local filesystem first
     html_report_path = scan_info.get('html_report_path')
+    if html_report_path:
+        report_file = Path(html_report_path)
+        if report_file.exists():
+            try:
+                with open(report_file, 'r', encoding='utf-8') as f:
+                    return HTMLResponse(content=f.read())
+            except Exception as e:
+                logger.error(f"Error reading local HTML report: {e}")
 
-    if not html_report_path:
-        raise HTTPException(
-            status_code=404,
-            detail="Detailed report not available for this scan"
-        )
-
-    # Check if file exists
-    report_file = Path(html_report_path)
-    if not report_file.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Report file not found: {html_report_path}"
-        )
-
-    # Read and return HTML content
+    # Fallback: read from object store
+    html_key = scan_info.get('html_report_key') or f"{scan_id}/garak.{scan_id}.report.html"
     try:
-        with open(report_file, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-
-        return HTMLResponse(content=html_content)
-
+        from services.object_store import object_store_available, get_object_store
+        if object_store_available():
+            store = get_object_store()
+            data = store.get(html_key)
+            if data is not None:
+                return HTMLResponse(content=data.decode("utf-8"))
     except Exception as e:
-        logger.error(f"Error reading HTML report: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error reading report: {str(e)}"
-        )
+        logger.error(f"Error reading HTML report from object store: {e}")
+
+    raise HTTPException(
+        status_code=404,
+        detail="Detailed report not available for this scan"
+    )
 
 
 @router.get("/{scan_id}/probes", response_model=ProbeDetailsResponse)

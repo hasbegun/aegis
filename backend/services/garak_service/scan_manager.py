@@ -404,11 +404,21 @@ class ScanManager:
             elif returncode == 0:
                 state.status = "completed"
                 state.progress = 100.0
+
+                # Upload report files to Minio (if configured)
+                report_keys = {}
+                try:
+                    from report_uploader import upload_report_files
+                    report_keys = upload_report_files(state.scan_id, REPORTS_DIR)
+                except Exception as upload_err:
+                    logger.warning(f"Report upload failed for {state.scan_id}: {upload_err}")
+
                 await state.event_queue.put({
                     "event_type": "complete",
                     "status": "completed",
                     "passed": state.passed,
                     "failed": state.failed,
+                    "report_keys": report_keys,
                 })
                 logger.info(f"Scan {state.scan_id} completed successfully")
             else:

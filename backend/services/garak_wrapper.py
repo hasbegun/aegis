@@ -109,6 +109,8 @@ class GarakWrapper:
                     existing.error_message = scan_info.get("error_message") or existing.error_message
                     existing.report_path = scan_info.get("jsonl_report_path") or existing.report_path
                     existing.html_report_path = scan_info.get("html_report_path") or existing.html_report_path
+                    existing.report_key = scan_info.get("report_key") or existing.report_key
+                    existing.html_report_key = scan_info.get("html_report_key") or existing.html_report_key
                     if config_json and not existing.config_json:
                         existing.config_json = config_json
                 else:
@@ -135,6 +137,8 @@ class GarakWrapper:
                         error_message=scan_info.get("error_message"),
                         report_path=scan_info.get("jsonl_report_path"),
                         html_report_path=scan_info.get("html_report_path"),
+                        report_key=scan_info.get("report_key"),
+                        html_report_key=scan_info.get("html_report_key"),
                         config_json=config_json,
                         created_at=scan_info.get("created_at"),
                     )
@@ -386,6 +390,12 @@ class GarakWrapper:
             scan_info["completed_at"] = datetime.now().isoformat()
             scan_info["passed"] = event.get("passed", scan_info.get("passed", 0))
             scan_info["failed"] = event.get("failed", scan_info.get("failed", 0))
+            # Store object store keys from garak service upload
+            report_keys = event.get("report_keys", {})
+            if report_keys.get("jsonl"):
+                scan_info["report_key"] = report_keys["jsonl"]
+            if report_keys.get("html"):
+                scan_info["html_report_key"] = report_keys["html"]
             self._sync_scan_to_db(scan_id)
 
         elif etype == "error":
@@ -481,7 +491,7 @@ class GarakWrapper:
         return False
 
     # ------------------------------------------------------------------
-    # Report reading (unchanged -- reads from shared volume)
+    # Report reading (object store → local filesystem fallback)
     # ------------------------------------------------------------------
 
     def get_scan_status(self, scan_id: str) -> Optional[Dict[str, Any]]:
@@ -530,7 +540,7 @@ class GarakWrapper:
             del self.active_scans[scan_id]
             logger.info(f"Removed scan {scan_id} from active scans")
 
-        # Delete report files
+        # Delete report files from local filesystem
         if self.garak_reports_dir.exists():
             deleted_files = []
             try:
@@ -546,9 +556,22 @@ class GarakWrapper:
                         except Exception as e:
                             logger.error(f"Failed to delete file {file_path}: {e}")
                 if deleted_files:
-                    logger.info(f"Deleted {len(deleted_files)} file(s) for scan {scan_id}")
+                    logger.info(f"Deleted {len(deleted_files)} local file(s) for scan {scan_id}")
             except Exception as e:
-                logger.error(f"Error deleting report files for scan {scan_id}: {e}")
+                logger.error(f"Error deleting local report files for scan {scan_id}: {e}")
+
+        # Delete report files from object store
+        try:
+            from services.object_store import object_store_available, get_object_store
+            if object_store_available():
+                store = get_object_store()
+                keys = store.list_keys(prefix=f"{scan_id}/")
+                for key in keys:
+                    store.delete(key)
+                if keys:
+                    logger.info(f"Deleted {len(keys)} object(s) from store for scan {scan_id}")
+        except Exception as e:
+            logger.warning(f"Error deleting objects from store for scan {scan_id}: {e}")
 
         return True
 
@@ -611,11 +634,33 @@ class GarakWrapper:
     def _get_report_entries(self, scan_id: str) -> Optional[List[dict]]:
         """Get parsed JSONL entries for a scan, using cache when valid.
 
+        Reads from object store (Minio) first, then falls back to local
+        filesystem. Completed scans are immutable, so cached entries never
+        need invalidation (except via explicit invalidate_cache call).
+
         Cache is invalidated when:
-        - File mtime changes (file was rewritten)
-        - TTL expires
+        - File mtime changes (file was rewritten) — local filesystem only
+        - TTL expires — local filesystem only
         - invalidate_cache() is called (e.g. on delete)
         """
+        # Check in-memory cache first
+        now = time.monotonic()
+        cached = self._report_cache.get(scan_id)
+        if cached and cached.get("immutable"):
+            # Object-store-sourced data — cache forever (write-once)
+            return cached["entries"]
+
+        # Try object store (Minio)
+        entries = self._read_entries_from_object_store(scan_id)
+        if entries is not None:
+            self._report_cache[scan_id] = {
+                "entries": entries,
+                "immutable": True,  # Objects in Minio are write-once
+                "cached_at": now,
+            }
+            return entries
+
+        # Fallback: local filesystem
         report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
         if not report_file.exists():
             return None
@@ -625,17 +670,16 @@ class GarakWrapper:
         except OSError:
             return None
 
-        now = time.monotonic()
-        cached = self._report_cache.get(scan_id)
+        # Check if local file cache is still valid
         if (
             cached
-            and cached["mtime"] == file_mtime
+            and cached.get("mtime") == file_mtime
             and (now - cached["cached_at"]) < self._cache_ttl
         ):
             return cached["entries"]
 
-        # Parse file
-        entries: List[dict] = []
+        # Parse local file
+        entries = []
         try:
             with open(report_file, "r", encoding="utf-8") as f:
                 for line in f:
@@ -653,6 +697,36 @@ class GarakWrapper:
             "cached_at": now,
         }
         return entries
+
+    def _read_entries_from_object_store(self, scan_id: str) -> Optional[List[dict]]:
+        """Try to read JSONL entries from the object store (Minio).
+
+        Returns None if object store is not available or file not found.
+        """
+        try:
+            from services.object_store import object_store_available, get_object_store
+            if not object_store_available():
+                return None
+
+            store = get_object_store()
+            key = f"{scan_id}/garak.{scan_id}.report.jsonl"
+            data = store.get(key)
+            if data is None:
+                return None
+
+            entries = []
+            for line in data.decode("utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            return entries if entries else None
+
+        except Exception as e:
+            logger.debug(f"Object store read failed for {scan_id}: {e}")
+            return None
 
     def invalidate_cache(self, scan_id: str):
         """Remove all cached data for a scan."""
@@ -731,7 +805,12 @@ class GarakWrapper:
         if scan_id in self.active_scans:
             return self._build_results(scan_id)
 
-        # Check Layer 3 cache for historical scans
+        # Check Layer 3 cache (immutable entries cached forever)
+        cached = self._results_cache.get(scan_id)
+        if cached and cached.get("immutable"):
+            return cached["data"]
+
+        # Check local filesystem for mtime-based cache
         report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
         if report_file.exists():
             try:
@@ -739,14 +818,20 @@ class GarakWrapper:
             except OSError:
                 file_mtime = None
 
-            if file_mtime is not None:
-                cached = self._results_cache.get(scan_id)
-                if cached and cached["mtime"] == file_mtime:
-                    return cached["data"]
+            if file_mtime is not None and cached and cached.get("mtime") == file_mtime:
+                return cached["data"]
 
             result = self._build_results(scan_id)
             if result and file_mtime is not None:
                 self._results_cache[scan_id] = {"data": result, "mtime": file_mtime}
+            return result
+
+        # Fallback: try object store (report may only exist in Minio)
+        entries = self._read_entries_from_object_store(scan_id)
+        if entries is not None:
+            result = self._build_results(scan_id)
+            if result:
+                self._results_cache[scan_id] = {"data": result, "immutable": True}
             return result
 
         return None
@@ -787,6 +872,8 @@ class GarakWrapper:
             "digest": scan_info.get("digest"),
             "html_report_path": scan_info.get("html_report_path"),
             "jsonl_report_path": scan_info.get("jsonl_report_path"),
+            "report_key": scan_info.get("report_key"),
+            "html_report_key": scan_info.get("html_report_key"),
             "output_lines": scan_info.get("output_lines", []),
         }
 
@@ -988,6 +1075,72 @@ class GarakWrapper:
         }
 
     # ------------------------------------------------------------------
+    # Materialized probe stats
+    # ------------------------------------------------------------------
+
+    def _compute_probe_stats(self, scan_id: str) -> Optional[Dict[str, Dict[str, int]]]:
+        """Compute per-category probe stats from JSONL entries.
+
+        Returns dict like: {"dan": {"passed": 10, "failed": 3}, ...}
+        Returns None if JSONL is unavailable.
+        """
+        entries = self._get_report_entries(scan_id)
+        if not entries:
+            return None
+
+        stats: Dict[str, Dict[str, int]] = {}
+        for entry in entries:
+            if entry.get("entry_type") != "attempt":
+                continue
+            probe_name = entry.get("probe_classname", "unknown")
+            category = probe_name.split(".")[0]
+            if category not in stats:
+                stats[category] = {"passed": 0, "failed": 0}
+            status_val = entry.get("status")
+            if status_val == 2:
+                stats[category]["passed"] += 1
+            elif status_val == 1:
+                stats[category]["failed"] += 1
+        return stats if stats else None
+
+    def _get_materialized_probe_stats(self, scan_id: str) -> Optional[Dict[str, Dict[str, int]]]:
+        """Get probe stats for a scan, using DB-materialized data when available.
+
+        On first access, computes from JSONL and stores in DB for future use.
+        """
+        # Check DB for pre-computed stats
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import Scan
+                with get_db() as db:
+                    row = db.query(Scan.probe_stats_json).filter_by(id=scan_id).first()
+                    if row and row[0]:
+                        return json.loads(row[0])
+            except Exception as e:
+                logger.debug(f"Failed to read materialized probe stats for {scan_id}: {e}")
+
+        # Compute from JSONL
+        stats = self._compute_probe_stats(scan_id)
+        if stats is None:
+            return None
+
+        # Materialize to DB for next time
+        if _db_available():
+            try:
+                from database.session import get_db
+                from database.models import Scan
+                with get_db() as db:
+                    row = db.query(Scan).filter_by(id=scan_id).first()
+                    if row and not row.probe_stats_json:
+                        row.probe_stats_json = json.dumps(stats)
+                        db.commit()
+            except Exception as e:
+                logger.debug(f"Failed to materialize probe stats for {scan_id}: {e}")
+
+        return stats
+
+    # ------------------------------------------------------------------
     # Aggregate statistics
     # ------------------------------------------------------------------
 
@@ -1067,20 +1220,13 @@ class GarakWrapper:
             # Probe failure aggregation (only for completed scans with reports)
             if status == "completed":
                 scan_id = scan.get("scan_id", "")
-                entries = self._get_report_entries(scan_id)
-                if entries:
-                    for entry in entries:
-                        if entry.get("entry_type") != "attempt":
-                            continue
-                        probe_name = entry.get("probe_classname", "unknown")
-                        category = probe_name.split(".")[0]
+                probe_stats = self._get_materialized_probe_stats(scan_id)
+                if probe_stats:
+                    for category, counts in probe_stats.items():
                         if category not in probe_agg:
                             probe_agg[category] = {"passed": 0, "failed": 0}
-                        entry_status = entry.get("status")
-                        if entry_status == 2:
-                            probe_agg[category]["passed"] += 1
-                        elif entry_status == 1:
-                            probe_agg[category]["failed"] += 1
+                        probe_agg[category]["passed"] += counts.get("passed", 0)
+                        probe_agg[category]["failed"] += counts.get("failed", 0)
 
         # --- Build response ---
         total_tests = total_passed + total_failed

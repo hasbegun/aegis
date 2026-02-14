@@ -1,10 +1,17 @@
 """
 Database session management.
 
-Creates a SQLite database in the shared garak reports directory and provides
-a session factory for use throughout the backend.
+Supports PostgreSQL (production) and SQLite (testing/fallback).
+The engine is selected by the DATABASE_URL environment variable:
+  - postgresql://user:pass@host:5432/db  → PostgreSQL
+  - sqlite:///path/to/file.db            → SQLite (file)
+  - sqlite:///:memory:                   → SQLite (in-memory, tests only)
+
+If DATABASE_URL is not set, falls back to a SQLite file in the
+garak reports directory.
 """
 import logging
+import os
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -23,8 +30,8 @@ _engine = None
 _SessionFactory = None
 
 
-def _get_db_path() -> Path:
-    """Determine the database file path.
+def _get_default_db_url() -> str:
+    """Build a SQLite URL as fallback when DATABASE_URL is not set.
 
     Stored inside garak_reports_path (the Docker shared volume at
     /data/garak_reports) so it persists across container restarts.
@@ -32,39 +39,53 @@ def _get_db_path() -> Path:
     from config import settings
     db_dir = settings.garak_reports_path
     db_dir.mkdir(parents=True, exist_ok=True)
-    return db_dir / "aegis.db"
+    db_path = db_dir / "aegis.db"
+    return f"sqlite:///{db_path}"
 
 
 def init_db(db_path: str | Path | None = None) -> None:
-    """Initialize the database: create engine, enable WAL, create tables.
+    """Initialize the database: create engine, create tables, store schema version.
 
     Args:
-        db_path: Optional override for the database file path.
-                 If None, uses the default path from settings.
-                 Use ":memory:" for in-memory testing.
+        db_path: Optional override.
+                 - ":memory:" for in-memory SQLite (tests).
+                 - A file path for file-based SQLite (legacy/fallback).
+                 - A full URL string like "postgresql://..." or "sqlite:///...".
+                 - None to auto-detect from DATABASE_URL env var or settings.
     """
     global _engine, _SessionFactory
 
-    if db_path is None:
-        db_path = _get_db_path()
+    # Determine the database URL
+    if db_path is not None:
+        path_str = str(db_path)
+        if path_str.startswith(("postgresql://", "sqlite://")):
+            db_url = path_str
+        elif path_str == ":memory:":
+            db_url = "sqlite:///:memory:"
+        else:
+            db_url = f"sqlite:///{path_str}"
+    else:
+        db_url = os.environ.get("DATABASE_URL") or _get_default_db_url()
 
-    db_url = f"sqlite:///{db_path}" if str(db_path) != ":memory:" else "sqlite:///:memory:"
+    is_sqlite = db_url.startswith("sqlite")
 
-    _engine = create_engine(
-        db_url,
-        echo=False,
-        connect_args={"check_same_thread": False},
-    )
+    # Build engine kwargs
+    engine_kwargs = {"echo": False}
+    if is_sqlite:
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
 
-    # Enable WAL mode for better concurrent read performance
-    @event.listens_for(_engine, "connect")
-    def _set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
+    _engine = create_engine(db_url, **engine_kwargs)
 
-    # Create all tables
+    # SQLite-specific pragmas (WAL for concurrency, FK enforcement)
+    if is_sqlite:
+        @event.listens_for(_engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    # Create all tables (safe no-op if they already exist)
     Base.metadata.create_all(_engine)
 
     _SessionFactory = sessionmaker(bind=_engine)
@@ -75,9 +96,20 @@ def init_db(db_path: str | Path | None = None) -> None:
         if not existing:
             db.add(DBMeta(key="schema_version", value=SCHEMA_VERSION))
             db.commit()
-            logger.info(f"Database initialized at {db_path} (schema v{SCHEMA_VERSION})")
-        else:
-            logger.info(f"Database opened at {db_path} (schema v{existing.value})")
+
+    # Log which backend we're using
+    if is_sqlite:
+        logger.info(f"Database initialized: SQLite ({db_url})")
+    else:
+        # Redact password in log output
+        safe_url = db_url
+        if "@" in safe_url:
+            prefix, rest = safe_url.split("://", 1)
+            if "@" in rest:
+                creds, host_part = rest.rsplit("@", 1)
+                user = creds.split(":")[0] if ":" in creds else creds
+                safe_url = f"{prefix}://{user}:***@{host_part}"
+        logger.info(f"Database initialized: {safe_url}")
 
 
 @contextmanager

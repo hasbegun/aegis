@@ -192,9 +192,44 @@ def backfill_custom_probes(probes_dir: Path) -> int:
     return inserted
 
 
+def _add_column_if_missing(engine, table: str, column: str, col_type: str) -> bool:
+    """Add a column to a table if it doesn't already exist.
+
+    Works for both PostgreSQL and SQLite. Returns True if column was added.
+    """
+    from sqlalchemy import inspect as sa_inspect, text
+
+    inspector = sa_inspect(engine)
+    existing = {col["name"] for col in inspector.get_columns(table)}
+    if column in existing:
+        return False
+
+    with engine.begin() as conn:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+    logger.info(f"Added column {table}.{column} ({col_type})")
+    return True
+
+
+def _run_schema_migrations(engine) -> None:
+    """Apply incremental schema changes for existing databases.
+
+    Called on every startup; each migration is idempotent.
+    """
+    # H1.1: object store keys on scans table
+    _add_column_if_missing(engine, "scans", "report_key", "VARCHAR")
+    _add_column_if_missing(engine, "scans", "html_report_key", "VARCHAR")
+    # H1.1: materialized probe stats
+    _add_column_if_missing(engine, "scans", "probe_stats_json", "TEXT")
+
+
 def run_backfill_if_needed() -> None:
-    """Run all backfill operations if the DB was just created (empty scans table)."""
+    """Run schema migrations and backfill operations on startup."""
     from config import settings
+    from database.session import _engine
+
+    # Always run schema migrations (idempotent)
+    if _engine is not None:
+        _run_schema_migrations(_engine)
 
     with get_db() as db:
         # Check if backfill already ran

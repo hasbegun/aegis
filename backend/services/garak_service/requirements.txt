@@ -3,3 +3,4 @@ uvicorn[standard]==0.32.0
 sse-starlette==2.1.0
 pydantic==2.9.0
 python-json-logger==3.2.1
+minio>=7.0,<8.0

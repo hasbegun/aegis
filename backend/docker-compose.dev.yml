@@ -3,6 +3,19 @@
 # Or simply: make aegis-dev
 
 services:
+  postgres:
+    # Expose PostgreSQL port for local tools (psql, pgAdmin, etc.)
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  minio:
+    # Faster healthcheck in dev
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+
   backend:
     command: >
       uvicorn main:app
@@ -16,6 +29,10 @@ services:
 
     # Override depends_on to not require healthcheck in dev
     depends_on:
+      postgres:
+        condition: service_started
+      minio:
+        condition: service_started
       garak:
         condition: service_started
 
@@ -23,7 +40,14 @@ services:
       LOG_LEVEL: DEBUG
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-      GARAK_REPORTS_DIR: "/data/garak_reports"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis-secret}@postgres:5432/${POSTGRES_DB:-aegis}"
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-minio}"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-aegis}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-aegis-secret}"
+      MINIO_BUCKET: "${MINIO_BUCKET:-aegis-reports}"
+      MINIO_SECURE: "false"
+      GARAK_REPORTS_DIR: "/tmp/garak_reports"
       GARAK_SERVICE_URL: "http://garak:9090"
       OLLAMA_HOST: "http://host.docker.internal:11434"
 
@@ -40,9 +64,6 @@ services:
       - ./main.py:/app/main.py:cached
       # Mount tests for `make test`
       - ./tests:/app/tests:cached
-      # Bind mount for reports in dev (easier to inspect)
-      # DB file (aegis.db) also lives here for persistence
-      - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
 
     healthcheck:
       disable: true
@@ -64,7 +85,7 @@ services:
     volumes:
       # Mount garak service code for hot reload
       - ./services/garak_service:/app:cached
-      # Bind mount for reports in dev
+      # Bind mount for garak reports scratch (dev inspection only)
       - "${GARAK_REPORTS_HOST_DIR:-./garak_reports}:/data/garak_reports"
 
     # Disable slow healthcheck in dev for faster startup

@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     ollama_model_cache_ttl: int = 300  # Cache TTL in seconds (5 minutes)
 
+    # Database Configuration
+    database_url: str | None = None  # e.g. postgresql://aegis:secret@postgres:5432/aegis
+
+    # Object Storage Configuration
+    storage_backend: str = "local"  # "local" or "minio"
+    minio_endpoint: str = "minio:9000"
+    minio_access_key: str = "aegis"
+    minio_secret_key: str = "aegis-secret"
+    minio_bucket: str = "aegis-reports"
+    minio_secure: bool = False  # Use TLS for Minio connections
+
     # API Configuration
     max_concurrent_scans: int = 5
 

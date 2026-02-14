@@ -14,14 +14,14 @@ This document describes the containerized architecture of Aegis, where the backe
                              │ HTTP + WebSocket
                              │ port 8888
                     ┌────────▼────────┐
-                    │  Backend API    │
-                    │  (FastAPI)      │
+                    │  Backend API    │◄────── PostgreSQL (structured data)
+                    │  (FastAPI)      │◄────── Minio (report artifacts)
                     │  aegis-backend  │
                     └────────┬────────┘
                              │ HTTP + SSE
                              │ port 9090 (internal)
                     ┌────────▼────────┐
-                    │  Garak Service  │
+                    │  Garak Service  │──────► Minio (upload reports)
                     │  (FastAPI thin  │
                     │   wrapper)      │
                     │  aegis-garak    │
@@ -52,7 +52,8 @@ The FastAPI backend that serves the frontend. It is a lightweight HTTP client --
   - Serve REST API for the frontend (scan management, history, settings)
   - WebSocket endpoint for real-time scan progress to the frontend
   - Consume SSE progress stream from the garak service
-  - Read scan report files from the shared volume
+  - Read scan reports from Minio object store (local filesystem fallback)
+  - Persist scan metadata in PostgreSQL (SQLite fallback for dev/tests)
   - Model discovery (Ollama API queries)
 - **Does NOT contain**: garak, Rust, or any garak dependencies
 
@@ -67,7 +68,7 @@ A thin FastAPI wrapper around the garak CLI. It runs garak as a subprocess and e
   - Parse garak stdout for progress (7 regex patterns)
   - Stream progress events to the backend via SSE
   - List plugins (probes, detectors, generators)
-  - Write scan reports to the shared volume
+  - Write scan reports locally, then upload to Minio
   - Manage scan lifecycle (start, cancel, status)
 - **Contains**: Python 3.11, Rust (for base2048), garak, thin FastAPI service
 
@@ -80,16 +81,36 @@ Optional container for running local LLM models in production.
 - **Dev**: Ollama runs on the host machine, containers reach it via `host.docker.internal:11434`
 - **Prod**: Runs as a container in the same network
 
-## Shared Volume
+## Data Services
 
-A Docker named volume `garak-reports` is mounted at `/data/garak_reports` in both containers:
+### PostgreSQL (`aegis-postgres`)
 
-| Container | Mount Mode | Purpose |
-|-----------|-----------|---------|
-| `aegis-garak` | read-write | garak writes `.jsonl` and `.html` report files here |
-| `aegis-backend` | read-write | Backend reads reports for history/results and deletes scans |
+Stores structured scan metadata, config templates, and custom probe metadata. Replaces the previous pattern of parsing JSONL files for every query.
 
-The garak container also creates a symlink from the default garak output path (`~/.local/share/garak/garak_runs`) to the shared volume as a fallback, in case the `garak.site.yaml` config isn't honored.
+- **Image**: `postgres:16-alpine`
+- **Port**: 5432 (internal; exposed to host in dev for `psql`/pgAdmin)
+- **Volume**: `pg-data` (persistent named volume)
+- **Tables**: `scans`, `config_templates`, `custom_probes`, `db_meta`
+- **Fallback**: SQLite in-memory for tests, SQLite file for dev without Docker
+
+### Minio (`aegis-minio`)
+
+S3-compatible object store for report artifacts (JSONL, HTML, hitlog). Replaces the shared Docker volume between backend and garak containers.
+
+- **Image**: `minio/minio:latest`
+- **Ports**: 9000 (API, internal), 9001 (console, exposed to host)
+- **Volume**: `minio-data` (persistent named volume)
+- **Bucket**: `aegis-reports`
+- **Key pattern**: `{scan_id}/garak.{scan_id}.report.jsonl`
+
+### Data Flow
+
+```
+Garak CLI writes to local scratch → Garak Service renames files →
+Garak Service uploads to Minio → Backend reads from Minio (cached, immutable)
+```
+
+The garak container has its own scratch volume (`garak-scratch`) for temporary CLI output. After scan completion, the garak service uploads the renamed report files to Minio. The backend reads from Minio as the primary source, with local filesystem as fallback for backward compatibility.
 
 ## Communication
 
@@ -144,7 +165,7 @@ API keys (OpenAI, Anthropic, etc.) are configured on the **garak container**, si
 
 ### Default (`docker-compose.yml`)
 
-Two services (backend + garak) with shared volume. Ollama on host.
+Four services (backend + garak + PostgreSQL + Minio). Ollama on host.
 
 ```bash
 docker compose up -d --build
@@ -180,23 +201,29 @@ make aegis-prod
 backend/
 ├── Dockerfile                          # Backend API (lightweight, no garak)
 ├── Dockerfile.garak                    # Garak service (garak + thin API)
-├── docker-compose.yml                  # Default: backend + garak
-├── docker-compose.dev.yml              # Dev: hot reload, debug logging
+├── docker-compose.yml                  # Default: backend + garak + postgres + minio
+├── docker-compose.dev.yml              # Dev: hot reload, debug logging, exposed ports
 ├── docker-compose.prod.yml             # Prod: adds Ollama container
 ├── Makefile                            # Build & deploy commands
 ├── main.py                             # Backend entry point
-├── config.py                           # Backend settings (incl. GARAK_SERVICE_URL)
-├── api/routes/                         # REST endpoints (unchanged)
+├── config.py                           # Backend settings (DB, Minio, garak service URL)
+├── api/routes/                         # REST endpoints
+├── database/
+│   ├── models.py                       # SQLAlchemy ORM (Scan, ConfigTemplate, etc.)
+│   ├── session.py                      # Engine + session management (PG/SQLite)
+│   └── migrations.py                   # Schema migrations + backfill from files
 ├── services/
 │   ├── garak_wrapper.py                # HTTP/SSE client to garak service
+│   ├── object_store.py                 # Storage abstraction (LocalStorage / MinioStorage)
 │   ├── model_discovery.py              # Ollama model discovery
 │   ├── workflow_analyzer.py            # Workflow analysis
 │   └── garak_service/                  # Garak service (runs in its own container)
 │       ├── app.py                      # FastAPI app with SSE endpoints
-│       ├── scan_manager.py             # Subprocess lifecycle management
+│       ├── scan_manager.py             # Subprocess lifecycle + Minio upload
 │       ├── progress_parser.py          # garak stdout parsing (7 regex patterns)
-│       └── requirements.txt            # Service dependencies
-└── models/schemas.py                   # Pydantic models (unchanged)
+│       ├── report_uploader.py          # Upload reports to Minio after scan
+│       └── requirements.txt            # Service dependencies (incl. minio)
+└── models/schemas.py                   # Pydantic models
 ```
 
 ## Error Handling
@@ -225,7 +252,7 @@ The backend WebSocket handler includes `error_message` in every poll message (no
 
 1. **SSE for backend-to-garak communication**: Simpler than WebSocket for unidirectional streaming. Maps naturally to stdout line parsing. Works well with httpx streaming client.
 
-2. **Shared volume for reports**: Both containers mount `/data/garak_reports`. No file transfer protocol needed.
+2. **Minio for report artifacts**: Reports are uploaded to Minio after scan completion. No shared volume between containers. Garak writes locally to scratch, then uploads. Backend reads from Minio (immutable, cached forever).
 
 3. **Thin API wrapper**: The garak service is intentionally minimal -- just wrapping CLI invocations. This keeps it reusable and avoids coupling to Aegis-specific logic.
 
@@ -254,14 +281,24 @@ The backend WebSocket handler includes `error_message` in every poll message (no
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GARAK_SERVICE_URL` | `http://localhost:9090` | URL of the garak service |
-| `GARAK_REPORTS_DIR` | `~/.local/share/garak/garak_runs` | Shared reports directory |
+| `GARAK_REPORTS_DIR` | `/tmp/garak_reports` | Local fallback directory (Minio is primary) |
+| `DATABASE_URL` | (SQLite fallback) | PostgreSQL connection string |
+| `STORAGE_BACKEND` | `minio` | Object store backend (`minio` or `local`) |
+| `MINIO_ENDPOINT` | `minio:9000` | Minio server endpoint |
+| `MINIO_ACCESS_KEY` | `aegis` | Minio access key |
+| `MINIO_SECRET_KEY` | `aegis-secret` | Minio secret key |
+| `MINIO_BUCKET` | `aegis-reports` | Minio bucket name |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama URL (for model discovery) |
 
 ### Garak Service
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GARAK_REPORTS_DIR` | `/data/garak_reports` | Where garak writes reports |
+| `GARAK_REPORTS_DIR` | `/data/garak_reports` | Local scratch dir for garak CLI output |
+| `MINIO_ENDPOINT` | `minio:9000` | Minio server endpoint (for uploads) |
+| `MINIO_ACCESS_KEY` | `aegis` | Minio access key |
+| `MINIO_SECRET_KEY` | `aegis-secret` | Minio secret key |
+| `MINIO_BUCKET` | `aegis-reports` | Minio bucket name |
 | `OLLAMA_HOST` | (from compose) | Ollama URL (passed to garak CLI) |
 | `OPENAI_API_KEY` | (from .env) | OpenAI API key |
 | `ANTHROPIC_API_KEY` | (from .env) | Anthropic API key |
