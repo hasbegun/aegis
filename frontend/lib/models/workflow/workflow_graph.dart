@@ -73,4 +73,18 @@ class WorkflowGraph with _$WorkflowGraph {
   /// Check if graph has vulnerabilities
   bool get hasVulnerabilities =>
       nodes.any((node) => node.nodeType == WorkflowNodeType.vulnerability);
+
+  /// Return a filtered copy keeping only nodes of the given types
+  /// and edges where both endpoints are visible.
+  WorkflowGraph filtered(Set<WorkflowNodeType> visibleTypes) {
+    final filteredNodes =
+        nodes.where((n) => visibleTypes.contains(n.nodeType)).toList();
+    final visibleNodeIds = filteredNodes.map((n) => n.nodeId).toSet();
+    final filteredEdges = edges
+        .where((e) =>
+            visibleNodeIds.contains(e.sourceId) &&
+            visibleNodeIds.contains(e.targetId))
+        .toList();
+    return copyWith(nodes: filteredNodes, edges: filteredEdges);
+  }
 }

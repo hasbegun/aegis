@@ -1,8 +1,10 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:graphview/GraphView.dart';
 import '../../models/workflow/workflow_graph.dart';
 import '../../models/workflow/workflow_node.dart';
+import '../../models/workflow/workflow_edge.dart';
 
 /// Widget for displaying workflow graph visualization.
 ///
@@ -21,6 +23,65 @@ class WorkflowGraphView extends StatefulWidget {
 
   @override
   State<WorkflowGraphView> createState() => _WorkflowGraphViewState();
+
+  /// Public static helpers so other widgets (legend, filters) can reuse colors/icons.
+  static Color getNodeColor(WorkflowNodeType type) {
+    switch (type) {
+      case WorkflowNodeType.probe:
+        return Colors.blue;
+      case WorkflowNodeType.generator:
+        return Colors.green;
+      case WorkflowNodeType.detector:
+        return Colors.orange;
+      case WorkflowNodeType.llmResponse:
+        return Colors.purple;
+      case WorkflowNodeType.vulnerability:
+        return Colors.red;
+    }
+  }
+
+  static IconData getNodeIcon(WorkflowNodeType type) {
+    switch (type) {
+      case WorkflowNodeType.probe:
+        return Icons.search;
+      case WorkflowNodeType.generator:
+        return Icons.settings;
+      case WorkflowNodeType.detector:
+        return Icons.radar;
+      case WorkflowNodeType.llmResponse:
+        return Icons.psychology;
+      case WorkflowNodeType.vulnerability:
+        return Icons.warning;
+    }
+  }
+
+  static Color getEdgeColor(WorkflowEdgeType type) {
+    switch (type) {
+      case WorkflowEdgeType.prompt:
+        return Colors.blue.shade400;
+      case WorkflowEdgeType.chain:
+        return Colors.green.shade400;
+      case WorkflowEdgeType.detection:
+        return Colors.orange.shade400;
+      case WorkflowEdgeType.response:
+        return Colors.purple.shade400;
+    }
+  }
+
+  static String getNodeTypeLabel(WorkflowNodeType type) {
+    switch (type) {
+      case WorkflowNodeType.probe:
+        return 'Probe';
+      case WorkflowNodeType.generator:
+        return 'Generator';
+      case WorkflowNodeType.detector:
+        return 'Detector';
+      case WorkflowNodeType.llmResponse:
+        return 'LLM Response';
+      case WorkflowNodeType.vulnerability:
+        return 'Vulnerability';
+    }
+  }
 }
 
 class _WorkflowGraphViewState extends State<WorkflowGraphView> {
@@ -74,6 +135,20 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
     algorithm.run(_graph, _padding, _padding);
   }
 
+  /// Build a lookup map from "sourceId->targetId" to edge info for the painter.
+  Map<String, _EdgeInfo> _buildEdgeInfoMap() {
+    final map = <String, _EdgeInfo>{};
+    for (var edge in widget.graph.edges) {
+      final key = '${edge.sourceId}->${edge.targetId}';
+      map[key] = _EdgeInfo(
+        type: edge.edgeType,
+        label: edge.label,
+        color: WorkflowGraphView.getEdgeColor(edge.edgeType),
+      );
+    }
+    return map;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.graph.isEmpty) {
@@ -108,6 +183,8 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
     final canvasWidth = maxX + _padding;
     final canvasHeight = maxY + _padding;
 
+    final edgeInfoMap = _buildEdgeInfoMap();
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final totalWidth = max(canvasWidth, constraints.maxWidth);
@@ -130,7 +207,8 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
                   child: CustomPaint(
                     painter: _EdgePainter(
                       graph: _graph,
-                      color: Theme.of(context).colorScheme.primary,
+                      edgeInfoMap: edgeInfoMap,
+                      fallbackColor: Theme.of(context).colorScheme.primary,
                       offsetX: offsetX,
                     ),
                   ),
@@ -161,8 +239,8 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
 
   Widget _buildNodeWidget(WorkflowNode node) {
     final theme = Theme.of(context);
-    final color = _getNodeColor(node.nodeType, theme);
-    final icon = _getNodeIcon(node.nodeType);
+    final color = WorkflowGraphView.getNodeColor(node.nodeType);
+    final icon = WorkflowGraphView.getNodeIcon(node.nodeType);
 
     return InkWell(
       onTap: () => widget.onNodeTap?.call(node.nodeId),
@@ -223,60 +301,53 @@ class _WorkflowGraphViewState extends State<WorkflowGraphView> {
     );
   }
 
-  Color _getNodeColor(WorkflowNodeType type, ThemeData theme) {
-    switch (type) {
-      case WorkflowNodeType.probe:
-        return Colors.blue;
-      case WorkflowNodeType.generator:
-        return Colors.green;
-      case WorkflowNodeType.detector:
-        return Colors.orange;
-      case WorkflowNodeType.llmResponse:
-        return Colors.purple;
-      case WorkflowNodeType.vulnerability:
-        return Colors.red;
-    }
-  }
+}
 
-  IconData _getNodeIcon(WorkflowNodeType type) {
-    switch (type) {
-      case WorkflowNodeType.probe:
-        return Icons.search;
-      case WorkflowNodeType.generator:
-        return Icons.settings;
-      case WorkflowNodeType.detector:
-        return Icons.radar;
-      case WorkflowNodeType.llmResponse:
-        return Icons.psychology;
-      case WorkflowNodeType.vulnerability:
-        return Icons.warning;
-    }
-  }
+/// Edge metadata for the painter.
+class _EdgeInfo {
+  final WorkflowEdgeType type;
+  final String label;
+  final Color color;
+
+  const _EdgeInfo({required this.type, required this.label, required this.color});
 }
 
 /// Custom painter that draws edges from bottom-center of source node
 /// to top-center of target node with a smooth cubic bezier curve.
+/// Edges are color-coded by type and labeled at the midpoint.
 class _EdgePainter extends CustomPainter {
   final Graph graph;
-  final Color color;
+  final Map<String, _EdgeInfo> edgeInfoMap;
+  final Color fallbackColor;
   final double offsetX;
 
-  _EdgePainter({required this.graph, required this.color, this.offsetX = 0});
+  _EdgePainter({
+    required this.graph,
+    required this.edgeInfoMap,
+    required this.fallbackColor,
+    this.offsetX = 0,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    final arrowPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
     for (var edge in graph.edges) {
       final src = edge.source;
       final dst = edge.destination;
+
+      // Look up edge type info
+      final srcId = src.key!.value as String;
+      final dstId = dst.key!.value as String;
+      final info = edgeInfoMap['$srcId->$dstId'];
+      final edgeColor = info?.color ?? fallbackColor;
+
+      final linePaint = Paint()
+        ..color = edgeColor
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke;
+
+      final arrowPaint = Paint()
+        ..color = edgeColor
+        ..style = PaintingStyle.fill;
 
       // Bottom-center of source
       final startX = src.x + src.width / 2 + offsetX;
@@ -301,10 +372,64 @@ class _EdgePainter extends CustomPainter {
         ..lineTo(endX + 5, endY - 8)
         ..close();
       canvas.drawPath(arrowPath, arrowPaint);
+
+      // Draw edge label at the curve midpoint
+      if (info != null) {
+        // The bezier midpoint (t=0.5) for our cubic is at ((startX+endX)/2, midY)
+        final labelX = (startX + endX) / 2;
+        final labelY = midY;
+
+        final paragraphBuilder = ui.ParagraphBuilder(
+          ui.ParagraphStyle(
+            textAlign: TextAlign.center,
+            fontSize: 10,
+          ),
+        )
+          ..pushStyle(ui.TextStyle(
+            color: edgeColor,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ))
+          ..addText(info.label);
+
+        final paragraph = paragraphBuilder.build()
+          ..layout(const ui.ParagraphConstraints(width: 80));
+
+        // Background pill behind the label for readability
+        final textWidth = paragraph.longestLine + 8;
+        final textHeight = paragraph.height + 4;
+        final bgRect = RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(labelX, labelY),
+            width: textWidth,
+            height: textHeight,
+          ),
+          const Radius.circular(4),
+        );
+        canvas.drawRRect(
+          bgRect,
+          Paint()..color = const Color(0xE0121212), // dark background
+        );
+        canvas.drawRRect(
+          bgRect,
+          Paint()
+            ..color = edgeColor.withOpacity(0.3)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1,
+        );
+
+        canvas.drawParagraph(
+          paragraph,
+          Offset(labelX - paragraph.longestLine / 2, labelY - paragraph.height / 2),
+        );
+      }
     }
   }
 
   @override
   bool shouldRepaint(_EdgePainter old) =>
-      old.graph != graph || old.color != color || old.offsetX != offsetX;
+      old.graph != graph ||
+      old.edgeInfoMap != edgeInfoMap ||
+      old.fallbackColor != fallbackColor ||
+      old.offsetX != offsetX;
 }
