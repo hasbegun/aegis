@@ -634,9 +634,12 @@ class GarakWrapper:
     def _get_report_entries(self, scan_id: str) -> Optional[List[dict]]:
         """Get parsed JSONL entries for a scan, using cache when valid.
 
-        Reads from object store (Minio) first, then falls back to local
-        filesystem. Completed scans are immutable, so cached entries never
-        need invalidation (except via explicit invalidate_cache call).
+        Lookup order:
+        1. In-memory cache (immutable for object-store-sourced data)
+        2. Object store (Minio)
+        3. Local filesystem
+        4. Garak service HTTP fallback (fetches from garak container and
+           uploads to Minio for future access)
 
         Cache is invalidated when:
         - File mtime changes (file was rewritten) — local filesystem only
@@ -662,41 +665,42 @@ class GarakWrapper:
 
         # Fallback: local filesystem
         report_file = self.garak_reports_dir / f"garak.{scan_id}.report.jsonl"
-        if not report_file.exists():
-            return None
+        if report_file.exists():
+            try:
+                file_mtime = report_file.stat().st_mtime
+            except OSError:
+                file_mtime = None
 
-        try:
-            file_mtime = report_file.stat().st_mtime
-        except OSError:
-            return None
+            if file_mtime is not None:
+                # Check if local file cache is still valid
+                if (
+                    cached
+                    and cached.get("mtime") == file_mtime
+                    and (now - cached["cached_at"]) < self._cache_ttl
+                ):
+                    return cached["entries"]
 
-        # Check if local file cache is still valid
-        if (
-            cached
-            and cached.get("mtime") == file_mtime
-            and (now - cached["cached_at"]) < self._cache_ttl
-        ):
-            return cached["entries"]
+                # Parse local file
+                entries = self._parse_local_report(report_file)
+                if entries is not None:
+                    self._report_cache[scan_id] = {
+                        "entries": entries,
+                        "mtime": file_mtime,
+                        "cached_at": now,
+                    }
+                    return entries
 
-        # Parse local file
-        entries = []
-        try:
-            with open(report_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entries.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        except Exception as e:
-            logger.error(f"Error reading report file for {scan_id}: {e}")
-            return None
+        # Fallback: fetch from garak service via HTTP
+        entries = self._fetch_report_from_garak_service(scan_id)
+        if entries is not None:
+            self._report_cache[scan_id] = {
+                "entries": entries,
+                "immutable": True,
+                "cached_at": now,
+            }
+            return entries
 
-        self._report_cache[scan_id] = {
-            "entries": entries,
-            "mtime": file_mtime,
-            "cached_at": now,
-        }
-        return entries
+        return None
 
     def _read_entries_from_object_store(self, scan_id: str) -> Optional[List[dict]]:
         """Try to read JSONL entries from the object store (Minio).
@@ -727,6 +731,113 @@ class GarakWrapper:
         except Exception as e:
             logger.debug(f"Object store read failed for {scan_id}: {e}")
             return None
+
+    @staticmethod
+    def _parse_local_report(report_file: Path) -> Optional[List[dict]]:
+        """Parse a local JSONL report file into entries.
+
+        Returns a list (possibly empty) on success, or None on read error.
+        """
+        entries = []
+        try:
+            with open(report_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            logger.error(f"Error reading report file {report_file}: {e}")
+            return None
+        return entries
+
+    def _fetch_report_from_garak_service(self, scan_id: str) -> Optional[List[dict]]:
+        """Fetch a report file from the garak service via HTTP.
+
+        When Minio and local filesystem both miss, the report may still exist
+        on the garak container. The DB stores the original garak file path
+        (e.g. /data/garak_reports/garak.{garak_uuid}.report.jsonl). We extract
+        the filename and fetch it via the garak service's /reports/{filename}
+        endpoint, then upload to Minio so future reads hit the cache.
+        """
+        # Look up the original report path from the DB
+        report_path = self._get_report_path_from_db(scan_id)
+        if not report_path:
+            return None
+
+        filename = Path(report_path).name
+        url = f"{self.garak_service_url}/reports/{filename}"
+
+        try:
+            with httpx.Client(timeout=30) as client:
+                resp = client.get(url)
+            if resp.status_code != 200:
+                logger.debug(f"Garak service returned {resp.status_code} for {filename}")
+                return None
+
+            content = resp.text
+            entries = []
+            for line in content.splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
+            if not entries:
+                return None
+
+            logger.info(f"Fetched {len(entries)} entries from garak service for {scan_id}")
+
+            # Upload to Minio so future reads don't need the garak service
+            self._upload_fetched_report_to_object_store(scan_id, content.encode("utf-8"))
+
+            return entries
+
+        except Exception as e:
+            logger.debug(f"Garak service fetch failed for {scan_id}: {e}")
+            return None
+
+    @staticmethod
+    def _get_report_path_from_db(scan_id: str) -> Optional[str]:
+        """Get the original report file path from the database."""
+        if not _db_available():
+            return None
+        try:
+            from database.session import get_db
+            from database.models import Scan
+            with get_db() as db:
+                scan = db.query(Scan).filter_by(id=scan_id).first()
+                if scan and scan.report_path:
+                    return scan.report_path
+        except Exception as e:
+            logger.debug(f"DB lookup failed for report path of {scan_id}: {e}")
+        return None
+
+    def _upload_fetched_report_to_object_store(self, scan_id: str, data: bytes) -> None:
+        """Upload report data to the object store and update the DB key."""
+        try:
+            from services.object_store import object_store_available, get_object_store
+            if not object_store_available():
+                return
+
+            store = get_object_store()
+            key = f"{scan_id}/garak.{scan_id}.report.jsonl"
+            store.put(key, data, content_type="application/jsonl")
+            logger.info(f"Uploaded fetched report to object store: {key}")
+
+            # Update DB with the object store key
+            if _db_available():
+                from database.session import get_db
+                from database.models import Scan
+                with get_db() as db:
+                    scan = db.query(Scan).filter_by(id=scan_id).first()
+                    if scan:
+                        scan.report_key = key
+                        db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to upload fetched report to object store: {e}")
 
     def invalidate_cache(self, scan_id: str):
         """Remove all cached data for a scan."""
@@ -826,8 +937,9 @@ class GarakWrapper:
                 self._results_cache[scan_id] = {"data": result, "mtime": file_mtime}
             return result
 
-        # Fallback: try object store (report may only exist in Minio)
-        entries = self._read_entries_from_object_store(scan_id)
+        # Delegate to _get_report_entries which handles Minio, local, and
+        # garak service fallback. If entries are found, build results.
+        entries = self._get_report_entries(scan_id)
         if entries is not None:
             result = self._build_results(scan_id)
             if result:
@@ -968,7 +1080,7 @@ class GarakWrapper:
                     probes_data[probe]["eval"] = {
                         "detector": entry.get("detector"),
                         "passed": entry.get("passed"),
-                        "total": entry.get("total"),
+                        "total": entry.get("total") or entry.get("total_evaluated"),
                     }
 
         # Build response with knowledge base enrichment

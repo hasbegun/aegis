@@ -7,6 +7,7 @@ Covers:
 - mtime-based invalidation
 - Manual invalidation (delete_scan, invalidate_cache, clear_cache)
 - Shared cache between _parse_report_file, get_probe_details, get_probe_attempts
+- Garak service HTTP fallback for reports not in Minio or local filesystem
 """
 import json
 import os
@@ -14,7 +15,7 @@ import sys
 import time
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -513,3 +514,123 @@ class TestResultsCache:
 
         assert SCAN_ID not in wrapper._report_cache
         assert SCAN_ID not in wrapper._results_cache
+
+
+# ---------------------------------------------------------------------------
+# Garak service HTTP fallback
+# ---------------------------------------------------------------------------
+
+class TestGarakServiceFallback:
+    """Test the garak service HTTP fallback for reports not in Minio/local."""
+
+    def test_fallback_fetches_from_garak_service(self, reports_dir):
+        """When Minio and local miss, fetch from garak service via HTTP."""
+        with patch("services.garak_wrapper.settings") as mock_settings:
+            mock_settings.garak_service_url = "http://garak:9090"
+            mock_settings.garak_reports_path = reports_dir
+            w = GarakWrapper(cache_ttl=2)
+
+        scan_id = "fallback-scan"
+        garak_uuid = "aaaa-bbbb-cccc"
+        garak_path = f"/data/garak_reports/garak.{garak_uuid}.report.jsonl"
+        content = _make_report_jsonl(_sample_entries())
+
+        # Mock the DB lookup to return the garak path
+        with patch.object(w, "_get_report_path_from_db", return_value=garak_path), \
+             patch("httpx.Client") as mock_httpx, \
+             patch.object(w, "_upload_fetched_report_to_object_store"):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.text = content
+            mock_httpx.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+            mock_httpx.return_value.__exit__ = MagicMock(return_value=False)
+
+            entries = w._get_report_entries(scan_id)
+
+        assert entries is not None
+        assert len(entries) == 6
+
+    def test_fallback_caches_as_immutable(self, reports_dir):
+        """Fetched entries should be cached as immutable."""
+        with patch("services.garak_wrapper.settings") as mock_settings:
+            mock_settings.garak_service_url = "http://garak:9090"
+            mock_settings.garak_reports_path = reports_dir
+            w = GarakWrapper(cache_ttl=2)
+
+        scan_id = "immutable-fallback"
+        content = _make_report_jsonl(_sample_entries())
+
+        with patch.object(w, "_get_report_path_from_db", return_value="/data/garak_reports/test.jsonl"), \
+             patch("httpx.Client") as mock_httpx, \
+             patch.object(w, "_upload_fetched_report_to_object_store"):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.text = content
+            mock_httpx.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+            mock_httpx.return_value.__exit__ = MagicMock(return_value=False)
+
+            w._get_report_entries(scan_id)
+
+        assert scan_id in w._report_cache
+        assert w._report_cache[scan_id]["immutable"] is True
+
+    def test_fallback_returns_none_when_no_db_path(self, reports_dir):
+        """If DB has no report_path, fallback returns None."""
+        with patch("services.garak_wrapper.settings") as mock_settings:
+            mock_settings.garak_service_url = "http://garak:9090"
+            mock_settings.garak_reports_path = reports_dir
+            w = GarakWrapper(cache_ttl=2)
+
+        with patch.object(w, "_get_report_path_from_db", return_value=None):
+            entries = w._get_report_entries("no-path-scan")
+
+        assert entries is None
+
+    def test_fallback_returns_none_on_http_error(self, reports_dir):
+        """If garak service returns non-200, fallback returns None."""
+        with patch("services.garak_wrapper.settings") as mock_settings:
+            mock_settings.garak_service_url = "http://garak:9090"
+            mock_settings.garak_reports_path = reports_dir
+            w = GarakWrapper(cache_ttl=2)
+
+        with patch.object(w, "_get_report_path_from_db", return_value="/data/report.jsonl"), \
+             patch("httpx.Client") as mock_httpx:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 404
+            mock_httpx.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+            mock_httpx.return_value.__exit__ = MagicMock(return_value=False)
+
+            entries = w._get_report_entries("http-error-scan")
+
+        assert entries is None
+
+    def test_fallback_uploads_to_object_store(self, reports_dir):
+        """Fetched reports should be uploaded to object store for caching."""
+        with patch("services.garak_wrapper.settings") as mock_settings:
+            mock_settings.garak_service_url = "http://garak:9090"
+            mock_settings.garak_reports_path = reports_dir
+            w = GarakWrapper(cache_ttl=2)
+
+        scan_id = "upload-test"
+        content = _make_report_jsonl(_sample_entries())
+
+        with patch.object(w, "_get_report_path_from_db", return_value="/data/report.jsonl"), \
+             patch("httpx.Client") as mock_httpx, \
+             patch.object(w, "_upload_fetched_report_to_object_store") as mock_upload:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.text = content
+            mock_httpx.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
+            mock_httpx.return_value.__exit__ = MagicMock(return_value=False)
+
+            w._get_report_entries(scan_id)
+
+        mock_upload.assert_called_once_with(scan_id, content.encode("utf-8"))
+
+    def test_fallback_skipped_when_local_file_exists(self, wrapper, reports_dir):
+        """When local file exists, garak service fallback should not be called."""
+        with patch.object(wrapper, "_fetch_report_from_garak_service") as mock_fetch:
+            entries = wrapper._get_report_entries(SCAN_ID)
+
+        assert entries is not None
+        mock_fetch.assert_not_called()

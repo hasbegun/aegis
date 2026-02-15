@@ -409,7 +409,12 @@ class ScanManager:
                 report_keys = {}
                 try:
                     from report_uploader import upload_report_files
-                    report_keys = upload_report_files(state.scan_id, REPORTS_DIR)
+                    report_keys = upload_report_files(
+                        state.scan_id,
+                        REPORTS_DIR,
+                        jsonl_path=state.jsonl_report_path,
+                        html_path=state.html_report_path,
+                    )
                 except Exception as upload_err:
                     logger.warning(f"Report upload failed for {state.scan_id}: {upload_err}")
 

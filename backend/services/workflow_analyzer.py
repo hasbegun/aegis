@@ -429,7 +429,8 @@ class WorkflowAnalyzer:
                 probe = entry.get("probe")
                 detector = entry.get("detector")
                 passed = entry.get("passed", 0)
-                total = entry.get("total", 0)
+                # garak uses "total_evaluated" in JSONL reports, not "total"
+                total = entry.get("total") or entry.get("total_evaluated", 0)
                 if probe and detector and total > 0:
                     result = "PASS" if passed == total else "FAIL"
                     self._handle_probe_result(

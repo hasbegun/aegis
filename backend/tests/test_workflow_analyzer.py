@@ -574,3 +574,29 @@ class TestBuildFromReport:
         wf = analyzer.build_from_report_entries(SCAN_ID, self.REPORT_ENTRIES)
         assert wf.statistics["probes_executed"] == 2
         assert wf.statistics["vulnerabilities_found"] == 1
+
+    def test_eval_with_total_evaluated_field(self, analyzer):
+        """garak JSONL uses 'total_evaluated' instead of 'total' in eval entries."""
+        entries = [
+            {"entry_type": "attempt", "probe_classname": "ansiescape.AnsiEscaped", "status": 2},
+            {"entry_type": "attempt", "probe_classname": "ansiescape.AnsiEscaped", "status": 1},
+            {
+                "entry_type": "eval",
+                "probe": "ansiescape.AnsiEscaped",
+                "detector": "ansiescape.Escaped",
+                "passed": 128,
+                "fails": 127,
+                "total_evaluated": 255,
+            },
+        ]
+        wf = analyzer.build_from_report_entries(SCAN_ID, entries)
+        assert wf is not None
+        # Should create detector node and edges from the eval entry
+        detectors = [n for n in wf.nodes if n.node_type == WorkflowNodeType.DETECTOR]
+        assert len(detectors) == 1
+        assert detectors[0].name == "ansiescape.Escaped"
+        # FAIL since passed(128) < total(255)
+        det_edges = [e for e in wf.edges if e.edge_type == WorkflowEdgeType.DETECTION]
+        assert len(det_edges) >= 1
+        vulns = [n for n in wf.nodes if n.node_type == WorkflowNodeType.VULNERABILITY]
+        assert len(vulns) == 1

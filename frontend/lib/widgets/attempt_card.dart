@@ -1,6 +1,75 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// Sanitize model output text for clean display.
+///
+/// Handles three kinds of ANSI escape data found in model outputs:
+///   A. Actual binary escape sequences (ESC byte 0x1b + sequence content)
+///   B. Text representations the model wrote (literal `\033[4m`, `\x1b[0m`)
+///   C. Orphaned fragments left when only the prefix was stripped (`]8;url`)
+///
+/// Phase order matters — binary sequences must be removed as whole units
+/// before individual control chars are converted to hex text.
+String _sanitizeForDisplay(String text) {
+  var s = text;
+
+  // ── Phase 1: Strip actual binary ANSI escape sequences ──
+  // Real ESC (0x1b) byte followed by sequence content.
+
+  // CSI: ESC [ <params> <letter>  (e.g. ESC[32m, ESC[0;1m)
+  s = s.replaceAll(RegExp('\x1b\\[[\\d;]*[A-Za-z]?'), '');
+
+  // OSC: ESC ] <content> BEL  or  ESC ] <content> ST
+  // (e.g. ESC]8;params;uri BEL for hyperlinks)
+  s = s.replaceAll(RegExp('\x1b\\][^\x07\x1b\n]*(?:\x07|\x1b\\\\)?'), '');
+
+  // Two-character: ESC <letter>  (e.g. ESC c for reset)
+  s = s.replaceAll(RegExp('\x1b[A-Za-z]'), '');
+
+  // Any remaining standalone ESC or BEL bytes
+  s = s.replaceAll(RegExp('[\x1b\x07]'), '');
+
+  // ── Phase 2: Strip text representations of escape codes ──
+  // Literal backslash-prefixed strings the model wrote as text.
+
+  // CSI text: \033[..m  \x1b[..m  \e[..m
+  s = s.replaceAll(RegExp(r'\\(?:033|x1b|e)\[[\d;]*[A-Za-z]?'), '');
+
+  // OSC text: \033]...\x07  \x1b]...\x07  (with text terminator)
+  s = s.replaceAll(RegExp(r'\\(?:033|x1b)\][^\s]*?\\x07'), '');
+
+  // Standalone escape notations: \x07  \x1b  \033  \a
+  s = s.replaceAll(RegExp(r'\\x[0-9a-fA-F]{2}'), '');
+  s = s.replaceAll(RegExp(r'\\033'), '');
+  s = s.replaceAll(RegExp(r'\\a\b'), '');
+
+  // ── Phase 3: Strip orphaned escape remnants ──
+  // Fragments like ]8;url left after ESC/\x1b prefix was stripped.
+  s = s.replaceAll(RegExp(r'\]8;[^\s\]]*'), '');
+
+  // ── Phase 4: Cleanup ──
+  // Fenced code-block markers: ```lang or ```
+  s = s.replaceAll(RegExp(r'```\w*'), '');
+
+  // Empty backtick pairs left behind: `` or ` `
+  s = s.replaceAll(RegExp(r'`\s*`'), '');
+
+  // Collapse runs of 3+ newlines into 2
+  s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+
+  // ── Phase 5: Replace remaining binary control characters ──
+  final buf = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    final code = s.codeUnitAt(i);
+    if (code < 0x20 && code != 0x0A && code != 0x0D && code != 0x09) {
+      buf.write('\\x${code.toRadixString(16).padLeft(2, '0')}');
+    } else {
+      buf.writeCharCode(code);
+    }
+  }
+  return buf.toString();
+}
+
 /// Expandable card showing a single test attempt (prompt, output, status)
 class AttemptCard extends StatefulWidget {
   final Map<String, dynamic> attempt;
@@ -58,9 +127,12 @@ class _AttemptCardState extends State<AttemptCard> {
                   Expanded(
                     child: Text(
                       promptText.isNotEmpty
-                          ? (promptText.length > 80
-                              ? '${promptText.substring(0, 80)}...'
-                              : promptText)
+                          ? (() {
+                              final clean = _sanitizeForDisplay(promptText);
+                              return clean.length > 80
+                                  ? '${clean.substring(0, 80)}...'
+                                  : clean;
+                            })()
                           : '(no prompt)',
                       style: theme.textTheme.bodySmall,
                       maxLines: 1,
@@ -252,6 +324,7 @@ class _AttemptCardState extends State<AttemptCard> {
   }
 
   Widget _buildCodeBlock(ThemeData theme, String text) {
+    final display = text.isNotEmpty ? _sanitizeForDisplay(text) : '(empty)';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(8),
@@ -263,7 +336,7 @@ class _AttemptCardState extends State<AttemptCard> {
         ),
       ),
       child: SelectableText(
-        text.isNotEmpty ? text : '(empty)',
+        display,
         style: TextStyle(
           fontSize: 12,
           fontFamily: 'monospace',
