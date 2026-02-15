@@ -540,7 +540,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aegis}
       POSTGRES_USER: ${POSTGRES_USER:-aegis}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis-secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pg-data:/var/lib/postgresql/data
     networks:
@@ -559,7 +559,7 @@ services:
       - "9001:9001"   # Web console (optional, for debugging)
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aegis}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aegis-secret}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - minio-data:/data
     networks:
@@ -578,10 +578,10 @@ services:
       minio:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis-secret}@postgres:5432/${POSTGRES_DB:-aegis}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aegis}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aegis}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aegis-secret}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: aegis-reports
       STORAGE_BACKEND: minio   # or "local" for dev without Minio
 
@@ -592,7 +592,7 @@ services:
     environment:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aegis}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aegis-secret}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: aegis-reports
 
 volumes:
@@ -734,16 +734,11 @@ If Minio upload succeeds but DB write fails (or vice versa), we get:
 
 #### Security Risk 2 (HIGH): Minio Credentials Exposure
 
-The docker-compose example uses hardcoded credentials:
-```yaml
-MINIO_ROOT_USER: aegis
-MINIO_ROOT_PASSWORD: aegis-secret
-```
+**Status: MITIGATED** — Credentials are now loaded from `.env` file (gitignored), not hardcoded in compose files. Docker-compose uses `${VAR:?error}` syntax to fail fast if credentials are missing.
 
 Both backend and garak service containers need these credentials to talk to Minio.
 
-**Mitigation:**
-- Use Docker secrets or `.env` file (not hardcoded in compose)
+**Further hardening:**
 - Create a dedicated service account with limited permissions (not root)
 - Bucket policy: `aegis-reports` bucket is private, no public access
 - TLS between containers (Minio supports `--certs-dir`)

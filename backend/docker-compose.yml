@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aegis}
       POSTGRES_USER: ${POSTGRES_USER:-aegis}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis-secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pg-data:/var/lib/postgresql/data
     networks:
@@ -27,7 +27,7 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aegis}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aegis-secret}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
     volumes:
       - minio-data:/data
     networks:
@@ -56,13 +56,13 @@ services:
       LOG_FORMAT: "${LOG_FORMAT:-json}"
 
       # Database (PostgreSQL)
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:-aegis-secret}@postgres:5432/${POSTGRES_DB:-aegis}"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-aegis}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-aegis}"
 
       # Object Storage (Minio)
       STORAGE_BACKEND: "${STORAGE_BACKEND:-minio}"
       MINIO_ENDPOINT: "minio:9000"
       MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-aegis}"
-      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-aegis-secret}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
       MINIO_BUCKET: "${MINIO_BUCKET:-aegis-reports}"
       MINIO_SECURE: "false"
 
@@ -103,7 +103,7 @@ services:
       # Object Storage (Minio)
       MINIO_ENDPOINT: "minio:9000"
       MINIO_ACCESS_KEY: "${MINIO_ROOT_USER:-aegis}"
-      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-aegis-secret}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
       MINIO_BUCKET: "${MINIO_BUCKET:-aegis-reports}"
       MINIO_SECURE: "false"
 

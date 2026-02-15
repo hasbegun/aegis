@@ -125,7 +125,7 @@ make aegis-dev
 | T1.2 | Backend health | `{"status": "ok"}` | `curl http://localhost:8888/health` |
 | T1.3 | Garak health (via backend) | "healthy" response | `make aegis-garak-health` |
 | T1.4 | PostgreSQL accepting connections | `pg_isready` succeeds | `docker compose exec postgres pg_isready -U aegis` |
-| T1.5 | Minio console accessible | Web UI loads | Open `http://localhost:9001` (user: aegis, pass: aegis-secret) |
+| T1.5 | Minio console accessible | Web UI loads | Open `http://localhost:9001` (credentials from `.env`: MINIO_ROOT_USER / MINIO_ROOT_PASSWORD) |
 | T1.6 | Minio bucket exists | `aegis-reports` bucket listed | Check Minio console > Buckets |
 
 ### 3.3 Database Connectivity (T2)

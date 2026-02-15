@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     storage_backend: str = "local"  # "local" or "minio"
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "aegis"
-    minio_secret_key: str = "aegis-secret"
+    minio_secret_key: str = ""  # Set via MINIO_SECRET_KEY env var or .env
     minio_bucket: str = "aegis-reports"
     minio_secure: bool = False  # Use TLS for Minio connections
 

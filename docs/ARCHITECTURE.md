@@ -286,7 +286,7 @@ The backend WebSocket handler includes `error_message` in every poll message (no
 | `STORAGE_BACKEND` | `minio` | Object store backend (`minio` or `local`) |
 | `MINIO_ENDPOINT` | `minio:9000` | Minio server endpoint |
 | `MINIO_ACCESS_KEY` | `aegis` | Minio access key |
-| `MINIO_SECRET_KEY` | `aegis-secret` | Minio secret key |
+| `MINIO_SECRET_KEY` | (from `.env`) | Minio secret key |
 | `MINIO_BUCKET` | `aegis-reports` | Minio bucket name |
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama URL (for model discovery) |
 
@@ -297,7 +297,7 @@ The backend WebSocket handler includes `error_message` in every poll message (no
 | `GARAK_REPORTS_DIR` | `/data/garak_reports` | Local scratch dir for garak CLI output |
 | `MINIO_ENDPOINT` | `minio:9000` | Minio server endpoint (for uploads) |
 | `MINIO_ACCESS_KEY` | `aegis` | Minio access key |
-| `MINIO_SECRET_KEY` | `aegis-secret` | Minio secret key |
+| `MINIO_SECRET_KEY` | (from `.env`) | Minio secret key |
 | `MINIO_BUCKET` | `aegis-reports` | Minio bucket name |
 | `OLLAMA_HOST` | (from compose) | Ollama URL (passed to garak CLI) |
 | `OPENAI_API_KEY` | (from .env) | OpenAI API key |
