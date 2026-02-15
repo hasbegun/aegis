@@ -7,7 +7,7 @@ A comprehensive list of missing features organized from easy to hard.
 | Difficulty | Count | Completed |
 |------------|-------|-----------|
 | Easy (1-2 hours) | 20 | 20 |
-| Medium (2-8 hours) | 25 | 20 |
+| Medium (2-8 hours) | 25 | 25 |
 | Hard (1-3 days) | 16 | 4 |
 | Very Hard (1+ week) | 10 | 0 |
 | Architecture | 1 | 1 |
@@ -127,14 +127,14 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 
 ### Garak CLI Flags
 
-- [ ] M21. Expose `--config_file` - Load config from YAML/JSON file
-- [ ] M22. Expose `--report_threshold` - Only report above threshold
-- [ ] M23. Expose `--hit_rate` - Stop after N vulnerabilities
-- [ ] M24. Expose `--collect_timing` - Timing metrics per probe
+- [x] M21. Expose `--config_file` - Load config from YAML/JSON file (completed 2026-02-14)
+- [x] M22. Expose `--report_threshold` - Only report above threshold (completed 2026-02-14)
+- [x] M23. Expose `--hit_rate` - Stop after N vulnerabilities (completed 2026-02-14)
+- [x] M24. Expose `--collect_timing` - Timing metrics per probe (completed 2026-02-14)
 
 ### Testing
 
-- [ ] M25. Add widget tests for main screens (home, config, results) — only 1 basic smoke test exists
+- [x] M25. Add widget tests for main screens (home, config, results) (completed 2026-02-14) — 121 Flutter tests covering HomeScreen (15), AdvancedConfigScreen (30), ResultsScreen (18), ScanConfig model+provider (57), smoke test (1)
 
 ---
 
@@ -220,14 +220,14 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 | ID | Feature | Difficulty | Status |
 |----|---------|------------|--------|
 | E7-E12 | Basic CLI flags | Easy | All done |
-| M21-M24 | Advanced CLI flags | Medium | Open |
+| M21-M24 | Advanced CLI flags | Medium | All done |
 
 ### Testing & Documentation
 
 | ID | Feature | Difficulty | Status |
 |----|---------|------------|--------|
 | E19-E20 | Documentation | Easy | All done |
-| M25 | Widget tests | Medium | Open |
+| M25 | Widget tests | Medium | Done |
 | H13-H15 | CI/CD & E2E tests | Hard | Open |
 
 ### Architecture
@@ -258,9 +258,8 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 
 ### For Power Users
 
-1. **M21** - Config file loading
+1. **M21-M24** - Advanced CLI flags — DONE
 2. **H2** - Scheduled scans
-3. **M22-M24** - Advanced CLI flags (threshold, hit rate, timing)
 
 ---
 
@@ -354,4 +353,4 @@ See `TODO_LOW_HANGING_FRUITS.md` for the 10 low-hanging-fruit features completed
 
 ---
 
-*Created: 2026-01-15 | Last Updated: 2026-02-14 (H1.1 completed)*
+*Created: 2026-01-15 | Last Updated: 2026-02-14 (M21-M25 completed)*

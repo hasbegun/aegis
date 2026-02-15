@@ -38,6 +38,8 @@ ScanConfig _$ScanConfigFromJson(Map<String, dynamic> json) => ScanConfig(
       excludeProbes: json['exclude_probes'] as String?,
       excludeDetectors: json['exclude_detectors'] as String?,
       timeoutPerProbe: (json['timeout_per_probe'] as num?)?.toInt(),
+      configFile: json['config_file'] as String?,
+      hitRate: (json['hit_rate'] as num?)?.toDouble(),
       reportThreshold: (json['report_threshold'] as num?)?.toDouble(),
       collectTiming: json['collect_timing'] as bool? ?? false,
     );
@@ -70,6 +72,8 @@ Map<String, dynamic> _$ScanConfigToJson(ScanConfig instance) =>
       'exclude_probes': instance.excludeProbes,
       'exclude_detectors': instance.excludeDetectors,
       'timeout_per_probe': instance.timeoutPerProbe,
+      'config_file': instance.configFile,
+      'hit_rate': instance.hitRate,
       'report_threshold': instance.reportThreshold,
       'collect_timing': instance.collectTiming,
     };

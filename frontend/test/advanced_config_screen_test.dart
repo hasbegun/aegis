@@ -5,7 +5,8 @@
 /// - Buffs and Detectors sections (empty and populated states)
 /// - Advanced parameters (text fields, toggles, sliders)
 /// - Action buttons (Start Scan, Back)
-/// - M22 report threshold and M24 collect timing controls
+/// - M21 config file text field, M22 report threshold, M23 hit rate slider,
+///   and M24 collect timing controls
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -241,6 +242,27 @@ void main() {
       expect(find.text('Output Directory'), findsOneWidget);
       expect(find.text('Exclude Probes'), findsOneWidget);
       expect(find.text('Exclude Detectors'), findsOneWidget);
+      expect(find.text('Config File'), findsOneWidget);
+    });
+
+    testWidgets('shows Config File text field with helper text (M21)',
+        (tester) async {
+      await pumpScreen(tester);
+      expect(find.text('Config File'), findsOneWidget);
+      expect(
+        find.text('Path to a YAML/JSON config file for garak (optional)'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('shows Hit Rate slider (M23)', (tester) async {
+      await pumpScreen(tester);
+      expect(find.text('Hit Rate'), findsOneWidget);
+      expect(
+        find.text(
+            'Stop scanning a probe after this hit rate is reached (0 = no limit)'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('shows info hint about default values', (tester) async {

@@ -95,6 +95,14 @@ class ScanConfig {
   @JsonKey(name: 'timeout_per_probe')
   final int? timeoutPerProbe;
 
+  // Config file
+  @JsonKey(name: 'config_file')
+  final String? configFile;
+
+  // Hit rate
+  @JsonKey(name: 'hit_rate')
+  final double? hitRate;
+
   // Report threshold
   @JsonKey(name: 'report_threshold')
   final double? reportThreshold;
@@ -130,6 +138,8 @@ class ScanConfig {
     this.excludeProbes,
     this.excludeDetectors,
     this.timeoutPerProbe,
+    this.configFile,
+    this.hitRate,
     this.reportThreshold,
     this.collectTiming = false,
   });
@@ -166,6 +176,8 @@ class ScanConfig {
     String? excludeProbes,
     String? excludeDetectors,
     int? timeoutPerProbe,
+    String? configFile,
+    double? hitRate,
     double? reportThreshold,
     bool? collectTiming,
   }) {
@@ -196,6 +208,8 @@ class ScanConfig {
       excludeProbes: excludeProbes ?? this.excludeProbes,
       excludeDetectors: excludeDetectors ?? this.excludeDetectors,
       timeoutPerProbe: timeoutPerProbe ?? this.timeoutPerProbe,
+      configFile: configFile ?? this.configFile,
+      hitRate: hitRate ?? this.hitRate,
       reportThreshold: reportThreshold ?? this.reportThreshold,
       collectTiming: collectTiming ?? this.collectTiming,
     );

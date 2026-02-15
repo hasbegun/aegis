@@ -35,6 +35,7 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   bool _continueOnError = false;
   int? _timeoutPerProbe;
   double? _reportThreshold;
+  double? _hitRate;
   bool _collectTiming = false;
   final TextEditingController _seedController = TextEditingController();
   final TextEditingController _parallelRequestsController = TextEditingController();
@@ -44,6 +45,7 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
   final TextEditingController _outputDirController = TextEditingController();
   final TextEditingController _excludeProbesController = TextEditingController();
   final TextEditingController _excludeDetectorsController = TextEditingController();
+  final TextEditingController _configFileController = TextEditingController();
 
   @override
   void dispose() {
@@ -55,6 +57,7 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
     _outputDirController.dispose();
     _excludeProbesController.dispose();
     _excludeDetectorsController.dispose();
+    _configFileController.dispose();
     super.dispose();
   }
 
@@ -74,12 +77,14 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
         _continueOnError != false ||
         _timeoutPerProbe != null ||
         _reportThreshold != null ||
+        _hitRate != null ||
         _collectTiming != false ||
         _systemPromptController.text.isNotEmpty ||
         _reportPrefixController.text.isNotEmpty ||
         _outputDirController.text.isNotEmpty ||
         _excludeProbesController.text.isNotEmpty ||
-        _excludeDetectorsController.text.isNotEmpty;
+        _excludeDetectorsController.text.isNotEmpty ||
+        _configFileController.text.isNotEmpty;
   }
 
   /// Handle back navigation with unsaved changes check
@@ -171,6 +176,16 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
       ref.read(scanConfigProvider.notifier).setTimeoutPerProbe(_timeoutPerProbe);
     }
 
+    // Apply config file
+    if (_configFileController.text.isNotEmpty) {
+      ref.read(scanConfigProvider.notifier).setConfigFile(_configFileController.text);
+    }
+
+    // Apply hit rate
+    if (_hitRate != null) {
+      ref.read(scanConfigProvider.notifier).setHitRate(_hitRate);
+    }
+
     // Apply report threshold
     if (_reportThreshold != null) {
       ref.read(scanConfigProvider.notifier).setReportThreshold(_reportThreshold);
@@ -232,6 +247,10 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
           ? _excludeDetectorsController.text
           : config.excludeDetectors,
       timeoutPerProbe: _timeoutPerProbe ?? config.timeoutPerProbe,
+      configFile: _configFileController.text.isNotEmpty
+          ? _configFileController.text
+          : config.configFile,
+      hitRate: _hitRate ?? config.hitRate,
       reportThreshold: _reportThreshold ?? config.reportThreshold,
       collectTiming: _collectTiming,
     );
@@ -733,6 +752,20 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
             ),
             const SizedBox(height: 16),
 
+            // Config File
+            TextField(
+              controller: _configFileController,
+              decoration: const InputDecoration(
+                labelText: 'Config File',
+                hintText: 'e.g., /path/to/config.yaml',
+                helperText: 'Path to a YAML/JSON config file for garak (optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.settings_applications),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 16),
+
             // Timeout Per Probe
             Row(
               children: [
@@ -813,6 +846,49 @@ class _AdvancedConfigScreenState extends ConsumerState<AdvancedConfigScreen> {
             ),
             Text(
               'Only report results above this threshold (0 = report all)',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Hit Rate
+            Row(
+              children: [
+                Icon(Icons.track_changes, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Hit Rate',
+                  style: theme.textTheme.bodyLarge,
+                ),
+                const Spacer(),
+                Text(
+                  _hitRate == null
+                      ? 'Default'
+                      : _hitRate!.toStringAsFixed(2),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            Slider(
+              value: (_hitRate ?? 0).toDouble(),
+              min: 0,
+              max: 1.0,
+              divisions: 20,
+              label: _hitRate == null || _hitRate == 0
+                  ? 'Default'
+                  : _hitRate!.toStringAsFixed(2),
+              onChanged: (value) {
+                setState(() {
+                  _hitRate = value == 0 ? null : value;
+                });
+              },
+            ),
+            Text(
+              'Stop scanning a probe after this hit rate is reached (0 = no limit)',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
