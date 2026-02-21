@@ -74,8 +74,7 @@ class WorkflowService {
   Future<List<Map<String, dynamic>>> getWorkflowTimeline(String scanId) async {
     try {
       final response = await _dio.get('/scan/$scanId/workflow/timeline');
-      final events = response.data['events'] as List;
-      return events.cast<Map<String, dynamic>>();
+      return (response.data as List).cast<Map<String, dynamic>>();
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) {
         _logger.w('No workflow timeline found for scan $scanId');

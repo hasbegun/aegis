@@ -149,10 +149,10 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 - [ ] **H3.** Add webhook support for scan events (start, complete, fail)
 - [x] **H4.** Add desktop notifications for scan completion (completed) — ScanNotificationService with iOS/macOS/Android support
 - [ ] **H5.** Add email notifications (requires SMTP config)
-- [ ] **H6.** Complete workflow viewer integration (graph visualization)
+- [x] **H6.** Complete workflow viewer integration (graph visualization) (completed 2026-02) — DAG layout, edge colors/labels, node type legend+filter, export (Mermaid/JSON), node detail dialog, timeline view
 - [ ] **H7.** Add mobile-responsive UI adaptations
 - [x] **H8.** Add result streaming (incremental updates during scan) (completed 2026-02) — WebSocket streams progress, probe, pass/fail counts in real-time
-- [ ] **H16.** Per-probe test details with security context (see [plan below](#h16-plan-per-probe-test-details-with-security-context))
+- [x] **H16.** Per-probe test details with security context (completed 2026-02) — Probes tab with searchable list, severity colors, pass/fail bars; detail screen with CWE/OWASP refs, attempt cards; digest integration for Charts tab
 
 ### Backend Infrastructure
 
@@ -201,8 +201,9 @@ Enforces the existing `max_concurrent_scans` setting (default 5) that was previo
 | E1-E6 | UI Polish items | Easy | All done |
 | M1-M12 | UI Feature items | Medium | All done |
 | H4 | Desktop notifications | Hard | Done |
-| H6-H7 | Major UI features | Hard | Open |
-| H16 | Probe details + security context | Hard | Planned |
+| H6 | Workflow viewer integration | Hard | Done |
+| H7 | Mobile-responsive UI | Hard | Open |
+| H16 | Probe details + security context | Hard | Done |
 | VH7-VH8 | Platform expansion | Very Hard | Open |
 
 ### Backend (API/Services)

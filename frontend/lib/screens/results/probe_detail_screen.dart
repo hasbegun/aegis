@@ -67,12 +67,11 @@ class _ProbeDetailScreenState extends ConsumerState<ProbeDetailScreen>
         pageSize: 100,
       );
 
-      // Capture stable counts from the initial unfiltered load
+      // Use backend-provided totals (accurate across all pages)
       if (statusFilter == null) {
-        final attempts = result['attempts'] as List? ?? [];
-        _totalCount = result['total_attempts'] as int? ?? attempts.length;
-        _failedCount = attempts.where((a) => a['status'] == 'failed').length;
-        _passedCount = attempts.where((a) => a['status'] == 'passed').length;
+        _totalCount = result['total_attempts'] as int? ?? 0;
+        _failedCount = result['total_failed'] as int? ?? 0;
+        _passedCount = result['total_passed'] as int? ?? 0;
       }
 
       setState(() {

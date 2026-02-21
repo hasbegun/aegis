@@ -959,6 +959,11 @@ class GarakWrapper:
             config = scan_info["config"]
             config_data = config.model_dump() if hasattr(config, "model_dump") else config
 
+        # DB rows don't store digest; extract from JSONL when missing
+        digest = scan_info.get("digest")
+        if digest is None:
+            digest = self._extract_digest(scan_id)
+
         return {
             "scan_id": scan_id,
             "status": scan_info["status"],
@@ -981,7 +986,7 @@ class GarakWrapper:
                 "status": scan_info["status"],
                 "error_message": scan_info.get("error_message"),
             },
-            "digest": scan_info.get("digest"),
+            "digest": digest,
             "html_report_path": scan_info.get("html_report_path"),
             "jsonl_report_path": scan_info.get("jsonl_report_path"),
             "report_key": scan_info.get("report_key"),
@@ -1145,7 +1150,10 @@ class GarakWrapper:
         if entries is None:
             return None
 
-        attempts = []
+        # First pass: count totals (before any status filter)
+        total_passed = 0
+        total_failed = 0
+        all_attempts = []
         for entry in entries:
             if entry.get("entry_type") != "attempt":
                 continue
@@ -1155,10 +1163,15 @@ class GarakWrapper:
             status_val = entry.get("status")
             status_str = "failed" if status_val == 1 else "passed" if status_val == 2 else "unknown"
 
+            if status_str == "passed":
+                total_passed += 1
+            elif status_str == "failed":
+                total_failed += 1
+
             if status_filter and status_str != status_filter:
                 continue
 
-            attempts.append({
+            all_attempts.append({
                 "uuid": entry.get("uuid", ""),
                 "seq": entry.get("seq", 0),
                 "status": status_str,
@@ -1172,7 +1185,7 @@ class GarakWrapper:
 
         metadata = get_probe_metadata(probe_classname)
 
-        total_attempts = len(attempts)
+        filtered_total = len(all_attempts)
         start = (page - 1) * page_size
         end = start + page_size
 
@@ -1180,10 +1193,13 @@ class GarakWrapper:
             "scan_id": scan_id,
             "probe_classname": probe_classname,
             "security": metadata,
-            "total_attempts": total_attempts,
+            "total_attempts": total_passed + total_failed,
+            "total_passed": total_passed,
+            "total_failed": total_failed,
+            "filtered_total": filtered_total,
             "page": page,
             "page_size": page_size,
-            "attempts": attempts[start:end],
+            "attempts": all_attempts[start:end],
         }
 
     # ------------------------------------------------------------------
@@ -1410,6 +1426,21 @@ class GarakWrapper:
         if total == 0:
             return 0.0
         return (passed / total) * 100.0
+
+    def _extract_digest(self, scan_id: str) -> Optional[Dict[str, Any]]:
+        """Extract just the digest entry from a JSONL report file.
+
+        This is used when scan_info comes from the DB (which doesn't
+        store digest).  Since _build_results output is cached, this
+        only runs once per scan.
+        """
+        entries = self._get_report_entries(scan_id)
+        if entries is None:
+            return None
+        for entry in entries:
+            if entry.get("entry_type") == "digest":
+                return entry.get("eval", {})
+        return None
 
 
 # Global instance
