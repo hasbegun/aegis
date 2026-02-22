@@ -134,7 +134,7 @@ class _AttemptCardState extends State<AttemptCard> {
                                   : clean;
                             })()
                           : '(no prompt)',
-                      style: theme.textTheme.bodySmall,
+                      style: theme.textTheme.bodyMedium,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -178,7 +178,7 @@ class _AttemptCardState extends State<AttemptCard> {
                       const SizedBox(height: 12),
                       Text(
                         'All Outputs (${allOutputs.length})',
-                        style: theme.textTheme.labelMedium?.copyWith(
+                        style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -194,7 +194,7 @@ class _AttemptCardState extends State<AttemptCard> {
                       const SizedBox(height: 12),
                       Text(
                         'Triggers',
-                        style: theme.textTheme.labelMedium?.copyWith(
+                        style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: Colors.orange,
                         ),
@@ -207,7 +207,7 @@ class _AttemptCardState extends State<AttemptCard> {
                             .map((t) => Chip(
                                   label: Text(
                                     t.length > 60 ? '${t.substring(0, 60)}...' : t,
-                                    style: const TextStyle(fontSize: 11),
+                                    style: const TextStyle(fontSize: 13),
                                   ),
                                   backgroundColor: Colors.orange.withValues(alpha: 0.1),
                                   visualDensity: VisualDensity.compact,
@@ -221,7 +221,7 @@ class _AttemptCardState extends State<AttemptCard> {
                       const SizedBox(height: 12),
                       Text(
                         'Detector Results',
-                        style: theme.textTheme.labelMedium?.copyWith(
+                        style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -238,7 +238,7 @@ class _AttemptCardState extends State<AttemptCard> {
                                 flex: 2,
                                 child: Text(
                                   e.key.split('.').last,
-                                  style: theme.textTheme.bodySmall?.copyWith(
+                                  style: theme.textTheme.bodyMedium?.copyWith(
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -260,7 +260,7 @@ class _AttemptCardState extends State<AttemptCard> {
                                       child: Text(
                                         score.toStringAsFixed(2),
                                         style: TextStyle(
-                                          fontSize: 11,
+                                          fontSize: 13,
                                           fontWeight: FontWeight.bold,
                                           color: color,
                                         ),
@@ -294,7 +294,7 @@ class _AttemptCardState extends State<AttemptCard> {
             const SizedBox(width: 4),
             Text(
               title,
-              style: theme.textTheme.labelMedium?.copyWith(
+              style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -327,7 +327,7 @@ class _AttemptCardState extends State<AttemptCard> {
     final display = text.isNotEmpty ? _sanitizeForDisplay(text) : '(empty)';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(6),
@@ -338,7 +338,7 @@ class _AttemptCardState extends State<AttemptCard> {
       child: SelectableText(
         display,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: 14,
           fontFamily: 'monospace',
           color: text.isEmpty
               ? theme.colorScheme.onSurfaceVariant

@@ -50,7 +50,14 @@ class Scan(Base):
 
     def to_dict(self):
         """Convert to dict matching the shape expected by existing code."""
+        import json as _json
         total = (self.passed or 0) + (self.failed or 0)
+        config = None
+        if self.config_json:
+            try:
+                config = _json.loads(self.config_json)
+            except (ValueError, TypeError):
+                pass
         return {
             "scan_id": self.id,
             "status": self.status,
@@ -62,6 +69,7 @@ class Scan(Base):
             "failed": self.failed or 0,
             "total_tests": total,
             "progress": 100.0 if self.status == "completed" else 0.0,
+            "config": config,
             "html_report_path": self.html_report_path,
             "jsonl_report_path": self.report_path,
             "report_key": self.report_key,

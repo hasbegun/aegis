@@ -955,9 +955,13 @@ class GarakWrapper:
             return None
 
         config_data = None
-        if "config" in scan_info:
+        if "config" in scan_info and scan_info["config"] is not None:
             config = scan_info["config"]
             config_data = config.model_dump() if hasattr(config, "model_dump") else config
+
+        # Fallback: reconstruct config from top-level fields or JSONL first entry
+        if config_data is None:
+            config_data = self._extract_config(scan_id, scan_info)
 
         # DB rows don't store digest; extract from JSONL when missing
         digest = scan_info.get("digest")
@@ -1440,6 +1444,42 @@ class GarakWrapper:
         for entry in entries:
             if entry.get("entry_type") == "digest":
                 return entry.get("eval", {})
+        return None
+
+    def _extract_config(
+        self, scan_id: str, scan_info: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Reconstruct scan config from JSONL first entry or scan_info fields.
+
+        Tries the JSONL first entry (which has the full garak config),
+        then falls back to top-level target_type/target_name from scan_info.
+        """
+        # Try JSONL first entry
+        entries = self._get_report_entries(scan_id)
+        if entries:
+            first = entries[0]
+            probe_spec = first.get("plugins.probe_spec", "")
+            probes = [probe_spec] if probe_spec else []
+            return {
+                "target_type": first.get("plugins.target_type", "unknown"),
+                "target_name": first.get("plugins.target_name", "unknown"),
+                "probes": probes,
+                "generations": first.get("run.generations"),
+                "eval_threshold": first.get("run.eval_threshold"),
+            }
+
+        # Fallback: use top-level fields from scan_info (DB row)
+        target_type = scan_info.get("target_type")
+        target_name = scan_info.get("target_name")
+        if target_type or target_name:
+            return {
+                "target_type": target_type or "unknown",
+                "target_name": target_name or "unknown",
+                "probes": None,
+                "generations": None,
+                "eval_threshold": None,
+            }
+
         return None
 
 
